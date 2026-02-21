@@ -1,35 +1,48 @@
+
 import { StyleSheet, ViewStyle, TextStyle } from 'react-native';
 
-// Language Learning App Theme - Vibrant and Educational
+// Purple Gradient Language Learning Theme - Inspired by modern language apps
 export const colors = {
-  // Light theme
-  background: '#F8F9FE',
+  // Primary purple gradient colors
+  primary: '#8B5CF6', // Vibrant purple
+  primaryLight: '#A78BFA', // Light purple
+  primaryDark: '#7C3AED', // Deep purple
+  
+  // Gradient colors for backgrounds
+  gradientStart: '#C4B5FD', // Light lavender
+  gradientMiddle: '#A78BFA', // Medium purple
+  gradientEnd: '#8B5CF6', // Vibrant purple
+  
+  // Background colors
+  background: '#F5F3FF', // Very light purple tint
+  backgroundAlt: '#EDE9FE', // Light purple background
   card: '#FFFFFF',
-  text: '#1A1A2E',
+  
+  // Text colors
+  text: '#1F2937', // Dark gray for readability
   textSecondary: '#6B7280',
-  primary: '#6366F1', // Indigo - main brand color
-  secondary: '#EC4899', // Pink - accent
-  accent: '#10B981', // Green - success/progress
-  highlight: '#F59E0B', // Amber - highlights
-  border: '#E5E7EB',
+  textLight: '#9CA3AF',
   
-  // Language-specific colors
-  spanish: '#FF6B6B',
-  french: '#4ECDC4',
-  german: '#FFD93D',
-  italian: '#95E1D3',
-  japanese: '#F38181',
-  chinese: '#AA96DA',
-  
-  // UI states
+  // Accent colors
+  accent: '#EC4899', // Pink accent
+  accentLight: '#F9A8D4',
   success: '#10B981',
   error: '#EF4444',
   warning: '#F59E0B',
   info: '#3B82F6',
-
-  // Legacy aliases
-  backgroundAlt: '#F0F1FA',
+  
+  // UI elements
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
   grey: '#9CA3AF',
+  
+  // Language-specific colors (with purple tints)
+  spanish: '#F472B6', // Pink
+  french: '#A78BFA', // Purple
+  german: '#FBBF24', // Amber
+  italian: '#34D399', // Emerald
+  japanese: '#F87171', // Red
+  chinese: '#C084FC', // Purple
 };
 
 export const buttonStyles = StyleSheet.create({
@@ -92,15 +105,18 @@ export const commonStyles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   card: {
-    backgroundColor: colors.backgroundAlt,
-    borderColor: colors.grey,
+    backgroundColor: colors.card,
+    borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
+    borderRadius: 16,
+    padding: 16,
     marginVertical: 8,
     width: '100%',
-    boxShadow: '0px 2px 3px rgba(0, 0, 0, 0.1)',
-    elevation: 2,
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
   },
   icon: {
     width: 60,

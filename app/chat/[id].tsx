@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useAuth } from '@/contexts/AuthContext';
@@ -85,28 +86,26 @@ export default function ChatScreen() {
       console.log('[API] Loaded messages:', data);
       
       if (data.length === 0) {
-        setMessages([
-          {
-            id: 'welcome',
-            role: 'assistant',
-            content: 'Hello! I\'m your AI language tutor. Let\'s practice together! Tap the microphone to speak or type your message.',
-            createdAt: new Date().toISOString(),
-          }
-        ]);
+        const welcomeMessage: Message = {
+          id: 'welcome',
+          role: 'assistant',
+          content: 'Hello! I\'m your AI language tutor. Let\'s practice together! Tap the microphone to speak or type your message.',
+          createdAt: new Date().toISOString(),
+        };
+        setMessages([welcomeMessage]);
       } else {
         setMessages(data);
       }
     } catch (error) {
       console.error('[API] Error loading messages:', error);
       setAlertModal({ visible: true, title: 'Error', message: 'Failed to load messages. Please go back and try again.' });
-      setMessages([
-        {
-          id: 'welcome',
-          role: 'assistant',
-          content: 'Hello! I\'m your AI language tutor. Let\'s practice together! Tap the microphone to speak or type your message.',
-          createdAt: new Date().toISOString(),
-        }
-      ]);
+      const welcomeMessage: Message = {
+        id: 'welcome',
+        role: 'assistant',
+        content: 'Hello! I\'m your AI language tutor. Let\'s practice together! Tap the microphone to speak or type your message.',
+        createdAt: new Date().toISOString(),
+      };
+      setMessages([welcomeMessage]);
     } finally {
       setLoading(false);
     }
@@ -181,7 +180,6 @@ export default function ChatScreen() {
     console.log('[API] Sending voice message from URI:', audioUri);
     setSending(true);
 
-    // Show a temporary "transcribing..." bubble while we process
     const tempId = `temp-${Date.now()}`;
     const tempUserMessage: Message = {
       id: tempId,
@@ -192,13 +190,11 @@ export default function ChatScreen() {
     setMessages(prev => [...prev, tempUserMessage]);
 
     try {
-      // Step 1: Transcribe audio via POST /api/conversations/:id/speech-to-text
       console.log('[API] Requesting /api/conversations/' + id + '/speech-to-text...');
 
       let transcribedText = '';
 
       if (Platform.OS === 'web') {
-        // On web, fetch the blob from the URI and build FormData
         const audioResponse = await fetch(audioUri);
         const audioBlob = await audioResponse.blob();
         const formData = new FormData();
@@ -211,7 +207,6 @@ export default function ChatScreen() {
         console.log('[API] Speech-to-text result:', sttResult);
         transcribedText = sttResult.text;
       } else {
-        // On native, use the file URI directly
         const formData = new FormData();
         formData.append('audio', {
           uri: audioUri,
@@ -228,7 +223,6 @@ export default function ChatScreen() {
       }
 
       if (!transcribedText || transcribedText.trim() === '') {
-        // Remove temp bubble and show error
         setMessages(prev => prev.filter(m => m.id !== tempId));
         setAlertModal({
           visible: true,
@@ -238,14 +232,12 @@ export default function ChatScreen() {
         return;
       }
 
-      // Step 2: Replace temp bubble with actual transcribed text
       setMessages(prev =>
         prev.map(m =>
           m.id === tempId ? { ...m, content: transcribedText } : m
         )
       );
 
-      // Step 3: Send transcribed text as a message to get AI response
       console.log('[API] Requesting /api/conversations/' + id + '/messages with transcribed text...');
       const response = await authenticatedPost<{ response: string; messageId: string; audioUrl?: string }>(
         `/api/conversations/${id}/messages`,
@@ -263,7 +255,6 @@ export default function ChatScreen() {
 
       setMessages(prev => [...prev, aiResponse]);
 
-      // Auto-play AI audio response if available
       if (response.audioUrl) {
         await playAudio(response.audioUrl, response.messageId);
       }
@@ -273,7 +264,6 @@ export default function ChatScreen() {
       }, 100);
     } catch (error) {
       console.error('[API] Error sending voice message:', error);
-      // Remove the temp bubble on error
       setMessages(prev => prev.filter(m => m.id !== tempId));
       setAlertModal({
         visible: true,
@@ -322,7 +312,6 @@ export default function ChatScreen() {
       
       setMessages(prev => [...prev, aiResponse]);
       
-      // Auto-play AI response if audio is available
       if (response.audioUrl) {
         await playAudio(response.audioUrl, response.messageId);
       }
@@ -427,11 +416,11 @@ export default function ChatScreen() {
           style={chatStyles.alertOverlay}
           onPress={() => setAlertModal(prev => ({ ...prev, visible: false }))}
         >
-          <Pressable style={[chatStyles.alertContainer, { backgroundColor: colors.card }]} onPress={() => {}}>
+          <Pressable style={chatStyles.alertContainer} onPress={() => {}}>
             <Text style={chatStyles.alertTitle}>{alertModal.title}</Text>
             {alertModal.message ? <Text style={chatStyles.alertMessage}>{alertModal.message}</Text> : null}
             <TouchableOpacity
-              style={[chatStyles.alertButton, { backgroundColor: colors.primary }]}
+              style={chatStyles.alertButton}
               onPress={() => setAlertModal(prev => ({ ...prev, visible: false }))}
             >
               <Text style={chatStyles.alertButtonText}>OK</Text>
@@ -465,37 +454,45 @@ export default function ChatScreen() {
                     isUser ? styles.userBubble : styles.assistantBubble,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.messageText,
-                      { color: isUser ? '#FFFFFF' : colors.text },
-                    ]}
-                  >
-                    {message.content}
-                  </Text>
-                  <View style={styles.messageFooter}>
-                    <Text
-                      style={[
-                        styles.messageTime,
-                        { color: isUser ? 'rgba(255,255,255,0.7)' : colors.textSecondary },
-                      ]}
+                  {isUser ? (
+                    <LinearGradient
+                      colors={[colors.primary, colors.primaryDark]}
+                      style={styles.userBubbleGradient}
                     >
-                      {timeDisplay}
-                    </Text>
-                    {message.audioUrl && !isUser && (
-                      <TouchableOpacity
-                        style={styles.audioButton}
-                        onPress={() => isPlaying ? stopAudio() : playAudio(message.audioUrl!, message.id)}
-                      >
-                        <IconSymbol
-                          ios_icon_name={isPlaying ? 'stop.fill' : 'speaker.wave.2.fill'}
-                          android_material_icon_name={isPlaying ? 'stop' : 'volume-up'}
-                          size={16}
-                          color={isUser ? '#FFFFFF' : colors.primary}
-                        />
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                      <Text style={styles.messageText}>
+                        {message.content}
+                      </Text>
+                      <View style={styles.messageFooter}>
+                        <Text style={styles.userMessageTime}>
+                          {timeDisplay}
+                        </Text>
+                      </View>
+                    </LinearGradient>
+                  ) : (
+                    <>
+                      <Text style={[styles.messageText, { color: colors.text }]}>
+                        {message.content}
+                      </Text>
+                      <View style={styles.messageFooter}>
+                        <Text style={[styles.messageTime, { color: colors.textSecondary }]}>
+                          {timeDisplay}
+                        </Text>
+                        {message.audioUrl && (
+                          <TouchableOpacity
+                            style={styles.audioButton}
+                            onPress={() => isPlaying ? stopAudio() : playAudio(message.audioUrl!, message.id)}
+                          >
+                            <IconSymbol
+                              ios_icon_name={isPlaying ? 'stop.fill' : 'speaker.wave.2.fill'}
+                              android_material_icon_name={isPlaying ? 'stop' : 'volume-up'}
+                              size={16}
+                              color={colors.primary}
+                            />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </>
+                  )}
                 </View>
               );
             })}
@@ -594,29 +591,33 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     maxWidth: '80%',
-    padding: 12,
-    borderRadius: 16,
     marginBottom: 12,
   },
   userBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: colors.primary,
+  },
+  userBubbleGradient: {
+    padding: 12,
+    borderRadius: 20,
     borderBottomRightRadius: 4,
   },
   assistantBubble: {
     alignSelf: 'flex-start',
     backgroundColor: colors.card,
+    padding: 12,
+    borderRadius: 20,
     borderBottomLeftRadius: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
     elevation: 2,
   },
   messageText: {
     fontSize: 16,
     lineHeight: 22,
     marginBottom: 4,
+    color: '#FFFFFF',
   },
   messageFooter: {
     flexDirection: 'row',
@@ -625,6 +626,10 @@ const styles = StyleSheet.create({
   },
   messageTime: {
     fontSize: 11,
+  },
+  userMessageTime: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   audioButton: {
     marginLeft: 8,
@@ -689,10 +694,11 @@ const chatStyles = StyleSheet.create({
     padding: 24,
   },
   alertContainer: {
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     width: '100%',
     maxWidth: 360,
+    backgroundColor: colors.card,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -715,8 +721,9 @@ const chatStyles = StyleSheet.create({
   },
   alertButton: {
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
+    backgroundColor: colors.primary,
   },
   alertButtonText: {
     fontSize: 15,

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { 
   StyleSheet, 
@@ -12,6 +13,7 @@ import {
 import { useTheme } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from "@/styles/commonStyles";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useAuth } from "@/contexts/AuthContext";
@@ -144,65 +146,83 @@ export default function HomeScreen() {
 
   if (authLoading) {
     return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      <LinearGradient
+        colors={[colors.gradientStart, colors.gradientMiddle, colors.gradientEnd]}
+        style={styles.centerContainer}
+      >
+        <ActivityIndicator size="large" color="#FFFFFF" />
+      </LinearGradient>
     );
   }
 
   if (!user) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.authPrompt}>
-          <Text style={styles.authIcon}>🌍</Text>
-          <Text style={styles.authTitle}>Welcome to LinguaLearn</Text>
-          <Text style={styles.authSubtitle}>
-            Practice languages with AI-powered conversations
-          </Text>
-          <TouchableOpacity 
-            style={[styles.authButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.push('/auth')}
-          >
-            <Text style={styles.authButtonText}>Get Started</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <LinearGradient
+        colors={[colors.gradientStart, colors.gradientMiddle, colors.gradientEnd]}
+        style={styles.container}
+      >
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.authPrompt}>
+            <Text style={styles.authIcon}>🌍</Text>
+            <Text style={styles.authTitle}>Continue French!</Text>
+            <Text style={styles.authSubtitle}>
+              Practice languages with AI-powered conversations
+            </Text>
+            <TouchableOpacity 
+              style={styles.authButton}
+              onPress={() => router.push('/auth')}
+            >
+              <Text style={styles.authButtonText}>Get Started</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
     );
   }
 
   const userName = user.name || user.email?.split('@')[0] || 'there';
+  const greetingText = 'Hello';
+  const userNameDisplay = userName;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Hello</Text>
-            <Text style={styles.userName}>{userName}</Text>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={[colors.gradientStart, colors.gradientMiddle, colors.gradientEnd]}
+        style={styles.headerGradient}
+      >
+        <SafeAreaView edges={['top']}>
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.greeting}>{greetingText}</Text>
+              <Text style={styles.userName}>{userNameDisplay}</Text>
+            </View>
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarText}>
+                {userName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
           </View>
-          <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
-            <Text style={styles.avatarText}>
-              {userName.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-        </View>
+        </SafeAreaView>
+      </LinearGradient>
 
-        {/* Quick Start Section */}
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Start Learning</Text>
           <TouchableOpacity 
-            style={[styles.newConversationCard, { backgroundColor: colors.card }]}
+            style={styles.newConversationCard}
             onPress={() => setShowNewConversation(true)}
           >
-            <View style={[styles.iconCircle, { backgroundColor: colors.primary + '20' }]}>
+            <LinearGradient
+              colors={[colors.primary, colors.primaryDark]}
+              style={styles.iconCircle}
+            >
               <IconSymbol 
                 ios_icon_name="plus" 
                 android_material_icon_name="add" 
                 size={28} 
-                color={colors.primary} 
+                color="#FFFFFF" 
               />
-            </View>
+            </LinearGradient>
             <View style={styles.cardContent}>
               <Text style={styles.cardTitle}>New Conversation</Text>
               <Text style={styles.cardSubtitle}>Practice with AI tutor</Text>
@@ -216,7 +236,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Recent Conversations */}
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
@@ -232,7 +251,7 @@ export default function HomeScreen() {
               return (
                 <TouchableOpacity 
                   key={conv.conversationId || index}
-                  style={[styles.conversationCard, { backgroundColor: colors.card }]}
+                  style={styles.conversationCard}
                   onPress={() => openConversation(conv.conversationId)}
                 >
                   <Text style={styles.conversationFlag}>{languageFlag}</Text>
@@ -276,7 +295,6 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
-      {/* Alert/Confirm Modal */}
       <Modal
         visible={alertModal.visible}
         transparent
@@ -287,7 +305,7 @@ export default function HomeScreen() {
           style={styles.alertOverlay}
           onPress={() => setAlertModal(prev => ({ ...prev, visible: false }))}
         >
-          <Pressable style={[styles.alertContainer, { backgroundColor: colors.card }]} onPress={() => {}}>
+          <Pressable style={styles.alertContainer} onPress={() => {}}>
             <Text style={styles.alertTitle}>{alertModal.title}</Text>
             {alertModal.message ? <Text style={styles.alertMessage}>{alertModal.message}</Text> : null}
             <View style={styles.alertButtonRow}>
@@ -316,7 +334,6 @@ export default function HomeScreen() {
         </Pressable>
       </Modal>
 
-      {/* New Conversation Modal */}
       <Modal
         visible={showNewConversation}
         transparent
@@ -328,7 +345,7 @@ export default function HomeScreen() {
             style={styles.modalBackdrop} 
             onPress={() => setShowNewConversation(false)} 
           />
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+          <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>New Conversation</Text>
               <TouchableOpacity onPress={() => setShowNewConversation(false)}>
@@ -410,18 +427,25 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.background,
+  },
+  safeArea: {
+    flex: 1,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerGradient: {
+    paddingBottom: 24,
   },
   scrollView: {
     flex: 1,
@@ -436,18 +460,19 @@ const styles = StyleSheet.create({
   },
   greeting: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.9)',
     marginBottom: 4,
   },
   userName: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
-    color: colors.text,
+    color: '#FFFFFF',
   },
   avatarCircle: {
     width: 48,
     height: 48,
     borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -470,12 +495,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
   },
   iconCircle: {
     width: 56,
@@ -506,13 +532,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 12,
+    backgroundColor: colors.card,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   conversationFlag: {
     fontSize: 32,
@@ -563,22 +590,25 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   authTitle: {
-    fontSize: 28,
+    fontSize: 36,
     fontWeight: 'bold',
-    color: colors.text,
+    color: '#FFFFFF',
     marginBottom: 12,
     textAlign: 'center',
   },
   authSubtitle: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
     marginBottom: 32,
   },
   authButton: {
-    paddingHorizontal: 32,
+    paddingHorizontal: 40,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   authButtonText: {
     fontSize: 16,
@@ -602,6 +632,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 24,
     maxHeight: '80%',
+    backgroundColor: colors.card,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -631,7 +662,7 @@ const styles = StyleSheet.create({
     width: '31%',
     margin: '1%',
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
   },
   languageFlag: {
@@ -651,7 +682,7 @@ const styles = StyleSheet.create({
   levelOption: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
   },
   levelText: {
@@ -660,7 +691,7 @@ const styles = StyleSheet.create({
   },
   createButton: {
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
   },
   createButtonText: {
@@ -680,10 +711,11 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   alertContainer: {
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     width: '100%',
     maxWidth: 360,
+    backgroundColor: colors.card,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -712,7 +744,7 @@ const styles = StyleSheet.create({
   alertButton: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
   },
   alertPrimaryButton: {
