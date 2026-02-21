@@ -18,13 +18,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useAuth } from '@/contexts/AuthContext';
-import { authenticatedGet, authenticatedPost } from '@/utils/api';
+import { authenticatedGet, authenticatedPost, authenticatedPostFormData } from '@/utils/api';
+import { Audio } from 'expo-av';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  audioUrl?: string;
 }
 
 export default function ChatScreen() {
@@ -36,6 +38,10 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [playingAudio, setPlayingAudio] = useState<string | null>(null);
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [alertModal, setAlertModal] = useState<{ visible: boolean; title: string; message: string }>({
     visible: false, title: '', message: '',
   });
@@ -44,8 +50,32 @@ export default function ChatScreen() {
     console.log('ChatScreen mounted, conversationId:', id);
     if (user && id) {
       loadMessages();
+      setupAudio();
     }
+    
+    return () => {
+      if (sound) {
+        console.log('Unloading sound on unmount');
+        sound.unloadAsync();
+      }
+      if (recording) {
+        console.log('Stopping recording on unmount');
+        recording.stopAndUnloadAsync();
+      }
+    };
   }, [id, user]);
+
+  const setupAudio = async () => {
+    try {
+      console.log('Setting up audio mode');
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+    } catch (error) {
+      console.error('Error setting up audio:', error);
+    }
+  };
 
   const loadMessages = async () => {
     console.log('[API] Loading messages for conversation:', id);
@@ -59,7 +89,7 @@ export default function ChatScreen() {
           {
             id: 'welcome',
             role: 'assistant',
-            content: 'Hello! I\'m your AI language tutor. Let\'s practice together! How can I help you today?',
+            content: 'Hello! I\'m your AI language tutor. Let\'s practice together! Tap the microphone to speak or type your message.',
             createdAt: new Date().toISOString(),
           }
         ]);
@@ -73,12 +103,185 @@ export default function ChatScreen() {
         {
           id: 'welcome',
           role: 'assistant',
-          content: 'Hello! I\'m your AI language tutor. Let\'s practice together! How can I help you today?',
+          content: 'Hello! I\'m your AI language tutor. Let\'s practice together! Tap the microphone to speak or type your message.',
           createdAt: new Date().toISOString(),
         }
       ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      console.log('Requesting microphone permissions');
+      const permission = await Audio.requestPermissionsAsync();
+      
+      if (permission.status !== 'granted') {
+        setAlertModal({ 
+          visible: true, 
+          title: 'Permission Required', 
+          message: 'Please grant microphone access to use voice chat.' 
+        });
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      console.log('Starting recording');
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      
+      setRecording(newRecording);
+      setIsRecording(true);
+      console.log('Recording started');
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      setAlertModal({ 
+        visible: true, 
+        title: 'Recording Error', 
+        message: 'Failed to start recording. Please try again.' 
+      });
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) {
+      return;
+    }
+
+    console.log('Stopping recording');
+    setIsRecording(false);
+    
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      console.log('Recording stopped, URI:', uri);
+      
+      setRecording(null);
+      
+      if (uri) {
+        await sendVoiceMessage(uri);
+      }
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      setAlertModal({ 
+        visible: true, 
+        title: 'Error', 
+        message: 'Failed to process voice recording.' 
+      });
+    }
+  };
+
+  const sendVoiceMessage = async (audioUri: string) => {
+    console.log('[API] Sending voice message from URI:', audioUri);
+    setSending(true);
+
+    // Show a temporary "transcribing..." bubble while we process
+    const tempId = `temp-${Date.now()}`;
+    const tempUserMessage: Message = {
+      id: tempId,
+      role: 'user',
+      content: '🎤 Transcribing...',
+      createdAt: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, tempUserMessage]);
+
+    try {
+      // Step 1: Transcribe audio via POST /api/conversations/:id/speech-to-text
+      console.log('[API] Requesting /api/conversations/' + id + '/speech-to-text...');
+
+      let transcribedText = '';
+
+      if (Platform.OS === 'web') {
+        // On web, fetch the blob from the URI and build FormData
+        const audioResponse = await fetch(audioUri);
+        const audioBlob = await audioResponse.blob();
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+
+        const sttResult = await authenticatedPostFormData<{ text: string; language: string }>(
+          `/api/conversations/${id}/speech-to-text`,
+          formData
+        );
+        console.log('[API] Speech-to-text result:', sttResult);
+        transcribedText = sttResult.text;
+      } else {
+        // On native, use the file URI directly
+        const formData = new FormData();
+        formData.append('audio', {
+          uri: audioUri,
+          type: 'audio/m4a',
+          name: 'recording.m4a',
+        } as any);
+
+        const sttResult = await authenticatedPostFormData<{ text: string; language: string }>(
+          `/api/conversations/${id}/speech-to-text`,
+          formData
+        );
+        console.log('[API] Speech-to-text result:', sttResult);
+        transcribedText = sttResult.text;
+      }
+
+      if (!transcribedText || transcribedText.trim() === '') {
+        // Remove temp bubble and show error
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        setAlertModal({
+          visible: true,
+          title: 'No Speech Detected',
+          message: 'Could not detect any speech in the recording. Please try again.',
+        });
+        return;
+      }
+
+      // Step 2: Replace temp bubble with actual transcribed text
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === tempId ? { ...m, content: transcribedText } : m
+        )
+      );
+
+      // Step 3: Send transcribed text as a message to get AI response
+      console.log('[API] Requesting /api/conversations/' + id + '/messages with transcribed text...');
+      const response = await authenticatedPost<{ response: string; messageId: string; audioUrl?: string }>(
+        `/api/conversations/${id}/messages`,
+        { message: transcribedText }
+      );
+      console.log('[API] Received AI response:', response);
+
+      const aiResponse: Message = {
+        id: response.messageId,
+        role: 'assistant',
+        content: response.response,
+        createdAt: new Date().toISOString(),
+        audioUrl: response.audioUrl ?? undefined,
+      };
+
+      setMessages(prev => [...prev, aiResponse]);
+
+      // Auto-play AI audio response if available
+      if (response.audioUrl) {
+        await playAudio(response.audioUrl, response.messageId);
+      }
+
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    } catch (error) {
+      console.error('[API] Error sending voice message:', error);
+      // Remove the temp bubble on error
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      setAlertModal({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to process voice message. Please try again or use text input.',
+      });
+    } finally {
+      setSending(false);
     }
   };
 
@@ -103,7 +306,7 @@ export default function ChatScreen() {
 
     try {
       console.log('[API] Requesting /api/conversations/' + id + '/messages...');
-      const response = await authenticatedPost<{ response: string; messageId: string }>(
+      const response = await authenticatedPost<{ response: string; messageId: string; audioUrl?: string }>(
         `/api/conversations/${id}/messages`,
         { message: userMessage }
       );
@@ -114,21 +317,66 @@ export default function ChatScreen() {
         role: 'assistant',
         content: response.response,
         createdAt: new Date().toISOString(),
+        audioUrl: response.audioUrl ?? undefined,
       };
       
       setMessages(prev => [...prev, aiResponse]);
+      
+      // Auto-play AI response if audio is available
+      if (response.audioUrl) {
+        await playAudio(response.audioUrl, response.messageId);
+      }
       
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
     } catch (error) {
       console.error('[API] Error sending message:', error);
-      // Remove the optimistic user message on failure
       setMessages(prev => prev.filter(m => m.id !== tempUserMessage.id));
       setInputText(userMessage);
       setAlertModal({ visible: true, title: 'Error', message: 'Failed to send message. Please try again.' });
     } finally {
       setSending(false);
+    }
+  };
+
+  const playAudio = async (audioUrl: string, messageId: string) => {
+    try {
+      console.log('Playing audio for message:', messageId);
+      
+      if (sound) {
+        await sound.unloadAsync();
+      }
+
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        { uri: audioUrl },
+        { shouldPlay: true }
+      );
+      
+      setSound(newSound);
+      setPlayingAudio(messageId);
+      
+      newSound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          console.log('Audio playback finished');
+          setPlayingAudio(null);
+        }
+      });
+    } catch (error) {
+      console.error('Error playing audio:', error);
+      setAlertModal({ 
+        visible: true, 
+        title: 'Playback Error', 
+        message: 'Failed to play audio response.' 
+      });
+    }
+  };
+
+  const stopAudio = async () => {
+    if (sound) {
+      console.log('Stopping audio playback');
+      await sound.stopAsync();
+      setPlayingAudio(null);
     }
   };
 
@@ -139,7 +387,8 @@ export default function ChatScreen() {
     const ampm = hours >= 12 ? 'PM' : 'AM';
     const displayHours = hours % 12 || 12;
     const displayMinutes = minutes < 10 ? `0${minutes}` : minutes;
-    return `${displayHours}:${displayMinutes} ${ampm}`;
+    const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
+    return timeString;
   };
 
   if (loading) {
@@ -158,6 +407,8 @@ export default function ChatScreen() {
     );
   }
 
+  const hasText = inputText.trim().length > 0;
+
   return (
     <>
       <Stack.Screen
@@ -166,7 +417,6 @@ export default function ChatScreen() {
           headerBackTitle: 'Back',
         }}
       />
-      {/* Alert Modal */}
       <Modal
         visible={alertModal.visible}
         transparent
@@ -205,6 +455,7 @@ export default function ChatScreen() {
             {messages.map((message) => {
               const isUser = message.role === 'user';
               const timeDisplay = formatTime(message.createdAt);
+              const isPlaying = playingAudio === message.id;
               
               return (
                 <View
@@ -222,14 +473,29 @@ export default function ChatScreen() {
                   >
                     {message.content}
                   </Text>
-                  <Text
-                    style={[
-                      styles.messageTime,
-                      { color: isUser ? 'rgba(255,255,255,0.7)' : colors.textSecondary },
-                    ]}
-                  >
-                    {timeDisplay}
-                  </Text>
+                  <View style={styles.messageFooter}>
+                    <Text
+                      style={[
+                        styles.messageTime,
+                        { color: isUser ? 'rgba(255,255,255,0.7)' : colors.textSecondary },
+                      ]}
+                    >
+                      {timeDisplay}
+                    </Text>
+                    {message.audioUrl && !isUser && (
+                      <TouchableOpacity
+                        style={styles.audioButton}
+                        onPress={() => isPlaying ? stopAudio() : playAudio(message.audioUrl!, message.id)}
+                      >
+                        <IconSymbol
+                          ios_icon_name={isPlaying ? 'stop.fill' : 'speaker.wave.2.fill'}
+                          android_material_icon_name={isPlaying ? 'stop' : 'volume-up'}
+                          size={16}
+                          color={isUser ? '#FFFFFF' : colors.primary}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               );
             })}
@@ -241,33 +507,65 @@ export default function ChatScreen() {
           </ScrollView>
 
           <View style={[styles.inputContainer, { backgroundColor: colors.card }]}>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              placeholder="Type your message..."
-              placeholderTextColor={colors.textSecondary}
-              value={inputText}
-              onChangeText={setInputText}
-              multiline
-              maxLength={500}
-              editable={!sending}
-            />
-            <TouchableOpacity
-              style={[
-                styles.sendButton,
-                {
-                  backgroundColor: inputText.trim() && !sending ? colors.primary : colors.border,
-                },
-              ]}
-              onPress={sendMessage}
-              disabled={!inputText.trim() || sending}
-            >
-              <IconSymbol
-                ios_icon_name="arrow.up"
-                android_material_icon_name="send"
-                size={20}
-                color="#FFFFFF"
+            {!isRecording && (
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                placeholder="Type or hold mic to speak..."
+                placeholderTextColor={colors.textSecondary}
+                value={inputText}
+                onChangeText={setInputText}
+                multiline
+                maxLength={500}
+                editable={!sending && !isRecording}
               />
-            </TouchableOpacity>
+            )}
+            {isRecording && (
+              <View style={styles.recordingIndicator}>
+                <View style={styles.recordingDot} />
+                <Text style={[styles.recordingText, { color: colors.text }]}>
+                  Recording...
+                </Text>
+              </View>
+            )}
+            
+            {hasText ? (
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  {
+                    backgroundColor: !sending ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={sendMessage}
+                disabled={sending}
+              >
+                <IconSymbol
+                  ios_icon_name="arrow.up"
+                  android_material_icon_name="send"
+                  size={20}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.micButton,
+                  {
+                    backgroundColor: isRecording ? '#EF4444' : colors.primary,
+                  },
+                ]}
+                onPressIn={startRecording}
+                onPressOut={stopRecording}
+                disabled={sending}
+              >
+                <IconSymbol
+                  ios_icon_name={isRecording ? 'stop.fill' : 'mic.fill'}
+                  android_material_icon_name={isRecording ? 'stop' : 'mic'}
+                  size={20}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+            )}
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -320,9 +618,17 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 4,
   },
+  messageFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   messageTime: {
     fontSize: 11,
-    alignSelf: 'flex-end',
+  },
+  audioButton: {
+    marginLeft: 8,
+    padding: 4,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -340,7 +646,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginRight: 8,
   },
+  recordingIndicator: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  recordingDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#EF4444',
+    marginRight: 8,
+  },
+  recordingText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
   sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  micButton: {
     width: 40,
     height: 40,
     borderRadius: 20,

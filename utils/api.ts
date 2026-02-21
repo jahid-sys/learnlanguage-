@@ -233,3 +233,83 @@ export const authenticatedDelete = async <T = any>(endpoint: string, data: any =
     body: JSON.stringify(data),
   });
 };
+
+/**
+ * Authenticated multipart/form-data POST request
+ * Used for uploading files (e.g., audio for speech-to-text)
+ * NOTE: Do NOT set Content-Type header manually — fetch sets it automatically with the boundary.
+ */
+export const authenticatedPostFormData = async <T = any>(
+  endpoint: string,
+  formData: FormData
+): Promise<T> => {
+  if (!isBackendConfigured()) {
+    throw new Error("Backend URL not configured. Please rebuild the app.");
+  }
+
+  const token = await getBearerToken();
+  if (!token) {
+    throw new Error("Authentication token not found. Please sign in.");
+  }
+
+  const url = `${BACKEND_URL}${endpoint}`;
+  console.log("[API] Calling (multipart):", url, "POST");
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      // Do NOT set Content-Type here — fetch sets it automatically with boundary
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error("[API] Error response:", response.status, text);
+    throw new Error(`API error: ${response.status} - ${text}`);
+  }
+
+  const data = await response.json();
+  console.log("[API] Success (multipart):", data);
+  return data;
+};
+
+/**
+ * Authenticated request that returns raw binary (e.g., audio file for text-to-speech)
+ */
+export const authenticatedPostBinary = async (
+  endpoint: string,
+  data: any
+): Promise<ArrayBuffer> => {
+  if (!isBackendConfigured()) {
+    throw new Error("Backend URL not configured. Please rebuild the app.");
+  }
+
+  const token = await getBearerToken();
+  if (!token) {
+    throw new Error("Authentication token not found. Please sign in.");
+  }
+
+  const url = `${BACKEND_URL}${endpoint}`;
+  console.log("[API] Calling (binary):", url, "POST");
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error("[API] Error response:", response.status, text);
+    throw new Error(`API error: ${response.status} - ${text}`);
+  }
+
+  const buffer = await response.arrayBuffer();
+  console.log("[API] Binary response received, size:", buffer.byteLength);
+  return buffer;
+};
