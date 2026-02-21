@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { api, authenticatedApi, signUpTestUser, expectStatus, connectWebSocket, connectAuthenticatedWebSocket, waitForMessage } from "./helpers";
+import { api, authenticatedApi, signUpTestUser, expectStatus, connectWebSocket, connectAuthenticatedWebSocket, waitForMessage, createTestFile } from "./helpers";
 
 describe("API Integration Tests", () => {
   // Shared state for chaining tests
@@ -259,6 +259,209 @@ describe("API Integration Tests", () => {
     });
   });
 
+  describe("Speech-to-Text - /api/conversations/{id}/speech-to-text", () => {
+    let sttConversationId: string;
+
+    // Setup: Create a conversation for STT tests
+    test("Create conversation for STT tests", async () => {
+      const res = await authenticatedApi("/api/conversations", authToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          language: "Spanish",
+          level: "intermediate",
+        }),
+      });
+      await expectStatus(res, 201);
+      const data = await res.json();
+      sttConversationId = data.conversationId;
+    });
+
+    // POST: Transcribe audio
+    test("Transcribe audio with file upload", async () => {
+      const form = new FormData();
+      form.append("file", createTestFile("audio.wav", "audio data", "audio/wav"));
+      const res = await authenticatedApi(
+        `/api/conversations/${sttConversationId}/speech-to-text`,
+        authToken,
+        {
+          method: "POST",
+          body: form,
+        }
+      );
+      await expectStatus(res, 200);
+      const data = await res.json();
+      expect(data.text).toBeDefined();
+      expect(data.language).toBeDefined();
+    });
+
+    // POST: Missing file
+    test("Transcribe without file returns 400", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${sttConversationId}/speech-to-text`,
+        authToken,
+        {
+          method: "POST",
+          body: new FormData(),
+        }
+      );
+      await expectStatus(res, 400);
+    });
+
+    // POST: Unauthenticated request
+    test("Transcribe without auth returns 401", async () => {
+      const form = new FormData();
+      form.append("file", createTestFile("audio.wav", "audio data", "audio/wav"));
+      const res = await api(
+        `/api/conversations/${sttConversationId}/speech-to-text`,
+        {
+          method: "POST",
+          body: form,
+        }
+      );
+      await expectStatus(res, 401);
+    });
+
+    // POST: Nonexistent conversation
+    test("Transcribe in nonexistent conversation returns 404", async () => {
+      const form = new FormData();
+      form.append("file", createTestFile("audio.wav", "audio data", "audio/wav"));
+      const res = await authenticatedApi(
+        "/api/conversations/00000000-0000-0000-0000-000000000000/speech-to-text",
+        authToken,
+        {
+          method: "POST",
+          body: form,
+        }
+      );
+      await expectStatus(res, 404);
+    });
+  });
+
+  describe("Text-to-Speech - /api/conversations/{id}/text-to-speech", () => {
+    let ttsConversationId: string;
+
+    // Setup: Create a conversation for TTS tests
+    test("Create conversation for TTS tests", async () => {
+      const res = await authenticatedApi("/api/conversations", authToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          language: "French",
+          level: "beginner",
+        }),
+      });
+      await expectStatus(res, 201);
+      const data = await res.json();
+      ttsConversationId = data.conversationId;
+    });
+
+    // POST: Generate audio from text with required fields
+    test("Generate audio from text with required fields", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${ttsConversationId}/text-to-speech`,
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: "Bonjour, comment allez-vous?",
+            language: "French",
+          }),
+        }
+      );
+      await expectStatus(res, 200);
+      // Response is binary audio data
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    // POST: Generate audio with optional voice parameter
+    test("Generate audio with optional voice parameter", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${ttsConversationId}/text-to-speech`,
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: "Bonsoir",
+            language: "French",
+            voice: "female",
+          }),
+        }
+      );
+      await expectStatus(res, 200);
+      const buffer = await res.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+    });
+
+    // POST: Missing required text field
+    test("Generate audio without text field returns 400", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${ttsConversationId}/text-to-speech`,
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            language: "French",
+          }),
+        }
+      );
+      await expectStatus(res, 400);
+    });
+
+    // POST: Missing required language field
+    test("Generate audio without language field returns 400", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${ttsConversationId}/text-to-speech`,
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: "Bonjour",
+          }),
+        }
+      );
+      await expectStatus(res, 400);
+    });
+
+    // POST: Unauthenticated request
+    test("Generate audio without auth returns 401", async () => {
+      const res = await api(
+        `/api/conversations/${ttsConversationId}/text-to-speech`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: "Bonjour",
+            language: "French",
+          }),
+        }
+      );
+      await expectStatus(res, 401);
+    });
+
+    // POST: Nonexistent conversation
+    test("Generate audio in nonexistent conversation returns 404", async () => {
+      const res = await authenticatedApi(
+        "/api/conversations/00000000-0000-0000-0000-000000000000/text-to-speech",
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: "Test",
+            language: "French",
+          }),
+        }
+      );
+      await expectStatus(res, 404);
+    });
+  });
+
   describe("Authorization - Conversation Ownership", () => {
     let user1Token: string;
     let user1ConversationId: string;
@@ -318,6 +521,38 @@ describe("API Integration Tests", () => {
         user2Token,
         {
           method: "DELETE",
+        }
+      );
+      await expectStatus(res, 403);
+    });
+
+    // AUTHORIZATION: User 2 cannot transcribe in User 1's conversation
+    test("User 2 cannot transcribe in User 1's conversation (403)", async () => {
+      const form = new FormData();
+      form.append("file", createTestFile("audio.wav", "audio data", "audio/wav"));
+      const res = await authenticatedApi(
+        `/api/conversations/${user1ConversationId}/speech-to-text`,
+        user2Token,
+        {
+          method: "POST",
+          body: form,
+        }
+      );
+      await expectStatus(res, 403);
+    });
+
+    // AUTHORIZATION: User 2 cannot generate audio in User 1's conversation
+    test("User 2 cannot generate audio in User 1's conversation (403)", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${user1ConversationId}/text-to-speech`,
+        user2Token,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: "Test",
+            language: "Italian",
+          }),
         }
       );
       await expectStatus(res, 403);

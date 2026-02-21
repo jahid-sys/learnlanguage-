@@ -14,6 +14,9 @@ export type App = typeof app;
 // Enable authentication
 app.withAuth();
 
+// Enable storage for audio files
+app.withStorage();
+
 // Register routes
 registerConversationRoutes(app);
 
