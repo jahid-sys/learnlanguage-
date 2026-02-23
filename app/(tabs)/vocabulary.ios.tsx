@@ -27,9 +27,24 @@ interface VocabularyItem {
   conversationId: string;
 }
 
+interface DailyVocabularyWord {
+  id: string;
+  latvianWord: string;
+  englishTranslation: string;
+  context?: string;
+  date: string;
+}
+
+interface DailyVocabularyResponse {
+  topic: string;
+  words: DailyVocabularyWord[];
+}
+
 export default function VocabularyScreen() {
   const { user } = useAuth();
   const [vocabulary, setVocabulary] = useState<VocabularyItem[]>([]);
+  const [dailyVocabulary, setDailyVocabulary] = useState<DailyVocabularyResponse | null>(null);
+  const [loadingDaily, setLoadingDaily] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [practiceMode, setPracticeMode] = useState(false);
@@ -50,6 +65,7 @@ export default function VocabularyScreen() {
     console.log('VocabularyScreen mounted (iOS)');
     if (user) {
       loadVocabulary();
+      loadDailyVocabulary();
     }
   }, [user]);
 
@@ -70,6 +86,26 @@ export default function VocabularyScreen() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadDailyVocabulary = async () => {
+    console.log('[API] Loading daily vocabulary');
+    setLoadingDaily(true);
+    try {
+      console.log('[API] Requesting /api/vocabulary/daily...');
+      const data = await authenticatedGet<DailyVocabularyResponse>('/api/vocabulary/daily');
+      console.log('[API] Loaded daily vocabulary:', data.topic, 'with', data.words.length, 'words');
+      setDailyVocabulary(data);
+    } catch (error) {
+      console.error('[API] Error loading daily vocabulary:', error);
+      setAlertModal({
+        visible: true,
+        title: 'Kļūda',
+        message: 'Neizdevās ielādēt dienas vārdus. Lūdzu, mēģiniet vēlreiz.',
+      });
+    } finally {
+      setLoadingDaily(false);
     }
   };
 
@@ -315,42 +351,89 @@ export default function VocabularyScreen() {
         )}
 
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {filteredVocabulary.length === 0 ? (
-            <View style={styles.emptyState}>
-              <IconSymbol ios_icon_name="book.closed" android_material_icon_name="menu-book" size={64} color={colors.textSecondary} />
-              <Text style={[styles.emptyStateText, { color: colors.text }]}>{emptyStateText}</Text>
-              <Text style={[styles.emptyStateSubtext, { color: colors.textSecondary }]}>{emptyStateSubtext}</Text>
-            </View>
-          ) : (
-            filteredVocabulary.map((item) => {
-              const dateDisplay = new Date(item.createdAt).toLocaleDateString('lv-LV', {
-                day: 'numeric',
-                month: 'short',
-              });
-
-              return (
-                <View key={item.id} style={[styles.vocabularyCard, { backgroundColor: colors.card }]}>
-                  <View style={styles.vocabularyCardHeader}>
-                    <View style={styles.vocabularyCardWords}>
-                      <Text style={[styles.latvianWord, { color: colors.text }]}>{item.latvianWord}</Text>
-                      <IconSymbol ios_icon_name="arrow.right" android_material_icon_name="arrow-forward" size={16} color={colors.textSecondary} />
-                      <Text style={[styles.englishWord, { color: colors.textSecondary }]}>{item.englishTranslation}</Text>
-                    </View>
-                    <TouchableOpacity
-                      onPress={() => confirmDeleteVocabulary(item.id, item.latvianWord)}
-                      style={styles.deleteButton}
-                    >
-                      <IconSymbol ios_icon_name="trash" android_material_icon_name="delete" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                  </View>
-                  {item.context && (
-                    <Text style={[styles.contextText, { color: colors.textSecondary }]}>{item.context}</Text>
-                  )}
-                  <Text style={[styles.dateText, { color: colors.textSecondary }]}>{dateDisplay}</Text>
+          {dailyVocabulary && (
+            <View style={styles.dailySection}>
+              <View style={styles.dailySectionHeader}>
+                <View style={styles.dailySectionTitleContainer}>
+                  <IconSymbol ios_icon_name="calendar" android_material_icon_name="calendar-today" size={24} color={colors.primary} />
+                  <Text style={[styles.dailySectionTitle, { color: colors.text }]}>Dienas Prakse</Text>
                 </View>
-              );
-            })
+                <View style={[styles.topicBadge, { backgroundColor: colors.primary + '20' }]}>
+                  <Text style={[styles.topicBadgeText, { color: colors.primary }]}>{dailyVocabulary.topic}</Text>
+                </View>
+              </View>
+              <Text style={[styles.dailySectionSubtitle, { color: colors.textSecondary }]}>
+                5 jauni vārdi šodienai
+              </Text>
+              {dailyVocabulary.words.map((word, index) => {
+                const wordNumber = `${index + 1}`;
+                return (
+                  <View key={word.id} style={[styles.dailyWordCard, { backgroundColor: colors.card }]}>
+                    <View style={styles.dailyWordNumber}>
+                      <Text style={[styles.dailyWordNumberText, { color: colors.primary }]}>{wordNumber}</Text>
+                    </View>
+                    <View style={styles.dailyWordContent}>
+                      <View style={styles.dailyWordHeader}>
+                        <Text style={[styles.dailyLatvianWord, { color: colors.text }]}>{word.latvianWord}</Text>
+                        <IconSymbol ios_icon_name="arrow.right" android_material_icon_name="arrow-forward" size={14} color={colors.textSecondary} />
+                        <Text style={[styles.dailyEnglishWord, { color: colors.textSecondary }]}>{word.englishTranslation}</Text>
+                      </View>
+                      {word.context && (
+                        <Text style={[styles.dailyContextText, { color: colors.textSecondary }]}>{word.context}</Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
           )}
+
+          {loadingDaily && !dailyVocabulary && (
+            <View style={styles.dailyLoadingContainer}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={[styles.dailyLoadingText, { color: colors.textSecondary }]}>Ielādē dienas vārdus...</Text>
+            </View>
+          )}
+
+          <View style={styles.savedSection}>
+            <Text style={[styles.savedSectionTitle, { color: colors.text }]}>Saglabātie Vārdi</Text>
+            {filteredVocabulary.length === 0 ? (
+              <View style={styles.emptyState}>
+                <IconSymbol ios_icon_name="book.closed" android_material_icon_name="menu-book" size={64} color={colors.textSecondary} />
+                <Text style={[styles.emptyStateText, { color: colors.text }]}>{emptyStateText}</Text>
+                <Text style={[styles.emptyStateSubtext, { color: colors.textSecondary }]}>{emptyStateSubtext}</Text>
+              </View>
+            ) : (
+              filteredVocabulary.map((item) => {
+                const dateDisplay = new Date(item.createdAt).toLocaleDateString('lv-LV', {
+                  day: 'numeric',
+                  month: 'short',
+                });
+
+                return (
+                  <View key={item.id} style={[styles.vocabularyCard, { backgroundColor: colors.card }]}>
+                    <View style={styles.vocabularyCardHeader}>
+                      <View style={styles.vocabularyCardWords}>
+                        <Text style={[styles.latvianWord, { color: colors.text }]}>{item.latvianWord}</Text>
+                        <IconSymbol ios_icon_name="arrow.right" android_material_icon_name="arrow-forward" size={16} color={colors.textSecondary} />
+                        <Text style={[styles.englishWord, { color: colors.textSecondary }]}>{item.englishTranslation}</Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => confirmDeleteVocabulary(item.id, item.latvianWord)}
+                        style={styles.deleteButton}
+                      >
+                        <IconSymbol ios_icon_name="trash" android_material_icon_name="delete" size={20} color={colors.textSecondary} />
+                      </TouchableOpacity>
+                    </View>
+                    {item.context && (
+                      <Text style={[styles.contextText, { color: colors.textSecondary }]}>{item.context}</Text>
+                    )}
+                    <Text style={[styles.dateText, { color: colors.textSecondary }]}>{dateDisplay}</Text>
+                  </View>
+                );
+              })
+            )}
+          </View>
         </ScrollView>
       </View>
     </>
@@ -517,6 +600,102 @@ const styles = StyleSheet.create({
   practiceButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  dailySection: {
+    marginBottom: 32,
+  },
+  dailySectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  dailySectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dailySectionTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  topicBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  topicBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  dailySectionSubtitle: {
+    fontSize: 14,
+    marginBottom: 16,
+    marginLeft: 32,
+  },
+  dailyWordCard: {
+    flexDirection: 'row',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  dailyWordNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  dailyWordNumberText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  dailyWordContent: {
+    flex: 1,
+  },
+  dailyWordHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+    flexWrap: 'wrap',
+  },
+  dailyLatvianWord: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  dailyEnglishWord: {
+    fontSize: 15,
+  },
+  dailyContextText: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
+  dailyLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 24,
+  },
+  dailyLoadingText: {
+    fontSize: 14,
+  },
+  savedSection: {
+    marginTop: 8,
+  },
+  savedSectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 16,
   },
 });
 
