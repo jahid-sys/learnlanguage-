@@ -267,46 +267,77 @@ export const authenticatedPostFormData = async <T = any>(
   console.log("[API] File URI:", fileUri);
 
   try {
-    const formData = new FormData();
-
     if (Platform.OS === 'web') {
-      console.log('[API] Web platform: fetching audio blob from URI');
+      console.log('[API] Web platform: using FormData with blob');
+      const formData = new FormData();
       const audioResponse = await fetch(fileUri);
       const audioBlob = await audioResponse.blob();
       console.log('[API] Audio blob size:', audioBlob.size, 'type:', audioBlob.type);
       formData.append(fieldName, audioBlob, fileName);
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      console.log('[API] Response status:', response.status);
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("[API] Error response:", response.status, text);
+        throw new Error(`API error: ${response.status} - ${text}`);
+      }
+
+      const data = await response.json();
+      console.log("[API] Success (multipart):", data);
+      return data;
     } else {
-      console.log('[API] Native platform: appending audio file with proper format');
-      // For React Native, we need to use the proper format that fetch understands
-      formData.append(fieldName, {
-        uri: fileUri,
-        type: mimeType,
-        name: fileName,
-      } as any);
+      console.log('[API] Native platform: using XMLHttpRequest for proper file upload');
+      
+      // On React Native, we need to use XMLHttpRequest for proper multipart file uploads
+      // because fetch doesn't properly handle file URIs
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        
+        xhr.onload = () => {
+          console.log('[API] XHR Response status:', xhr.status);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              console.log('[API] Success (multipart):', data);
+              resolve(data);
+            } catch (error) {
+              console.error('[API] Error parsing response:', error);
+              reject(new Error('Failed to parse response'));
+            }
+          } else {
+            console.error('[API] Error response:', xhr.status, xhr.responseText);
+            reject(new Error(`API error: ${xhr.status} - ${xhr.responseText}`));
+          }
+        };
+        
+        xhr.onerror = () => {
+          console.error('[API] XHR network error');
+          reject(new Error('Network request failed'));
+        };
+        
+        xhr.open('POST', url);
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        
+        const formData = new FormData();
+        formData.append(fieldName, {
+          uri: fileUri,
+          type: mimeType,
+          name: fileName,
+        } as any);
+        
+        console.log('[API] Sending XHR request with FormData...');
+        xhr.send(formData);
+      });
     }
-
-    console.log('[API] FormData prepared, sending request...');
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        // Do NOT set Content-Type - fetch will set it automatically with boundary
-      },
-      body: formData,
-    });
-
-    console.log('[API] Response status:', response.status);
-
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("[API] Error response:", response.status, text);
-      throw new Error(`API error: ${response.status} - ${text}`);
-    }
-
-    const data = await response.json();
-    console.log("[API] Success (multipart):", data);
-    return data;
   } catch (error: any) {
     console.error("[API] Multipart request failed:", error);
     console.error("[API] Error details:", {
