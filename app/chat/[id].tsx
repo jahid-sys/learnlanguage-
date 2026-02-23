@@ -223,7 +223,7 @@ export default function ChatScreen() {
   };
 
   const sendVoiceMessage = async (audioUri: string) => {
-    console.log('[API] Sending voice message from URI:', audioUri);
+    console.log('[Voice] Sending voice message from URI:', audioUri);
     setSending(true);
 
     const tempId = `temp-${Date.now()}`;
@@ -236,35 +236,23 @@ export default function ChatScreen() {
     setMessages(prev => [...prev, tempUserMessage]);
 
     try {
-      console.log('[API] Preparing FormData for speech-to-text');
-      const formData = new FormData();
-
-      if (Platform.OS === 'web') {
-        console.log('[API] Web platform: fetching audio blob from URI');
-        const audioResponse = await fetch(audioUri);
-        const audioBlob = await audioResponse.blob();
-        console.log('[API] Audio blob size:', audioBlob.size, 'type:', audioBlob.type);
-        formData.append('audio', audioBlob, 'recording.webm');
-      } else {
-        console.log('[API] Native platform: appending audio file');
-        formData.append('audio', {
-          uri: audioUri,
-          type: 'audio/m4a',
-          name: 'recording.m4a',
-        } as any);
-      }
-
-      console.log('[API] Requesting /api/conversations/' + id + '/speech-to-text...');
+      console.log('[Voice] Calling speech-to-text API with file URI:', audioUri);
+      
+      // Use the updated authenticatedPostFormData that properly handles file uploads
       const sttResult = await authenticatedPostFormData<{ text: string; language: string }>(
         `/api/conversations/${id}/speech-to-text`,
-        formData
+        audioUri,
+        'audio',
+        'recording.m4a',
+        'audio/m4a'
       );
-      console.log('[API] Speech-to-text result:', sttResult);
+      
+      console.log('[Voice] Speech-to-text result:', sttResult);
       
       const transcribedText = sttResult.text;
 
       if (!transcribedText || transcribedText.trim() === '') {
-        console.warn('[API] Empty transcription received');
+        console.warn('[Voice] Empty transcription received');
         setMessages(prev => prev.filter(m => m.id !== tempId));
         setAlertModal({
           visible: true,
@@ -274,19 +262,19 @@ export default function ChatScreen() {
         return;
       }
 
-      console.log('[API] Transcription successful:', transcribedText);
+      console.log('[Voice] Transcription successful:', transcribedText);
       setMessages(prev =>
         prev.map(m =>
           m.id === tempId ? { ...m, content: transcribedText } : m
         )
       );
 
-      console.log('[API] Requesting /api/conversations/' + id + '/messages with transcribed text...');
+      console.log('[Voice] Sending transcribed text to AI...');
       const response = await authenticatedPost<{ response: string; messageId: string; audioUrl?: string }>(
         `/api/conversations/${id}/messages`,
         { message: transcribedText }
       );
-      console.log('[API] Received AI response:', response);
+      console.log('[Voice] Received AI response:', response);
 
       const aiResponse: Message = {
         id: response.messageId,
@@ -299,20 +287,24 @@ export default function ChatScreen() {
       setMessages(prev => [...prev, aiResponse]);
 
       if (response.audioUrl) {
-        console.log('[API] Playing AI audio response');
+        console.log('[Voice] Playing AI audio response');
         await playAudio(response.audioUrl, response.messageId);
       }
 
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
-    } catch (error) {
-      console.error('[API] Error sending voice message:', error);
+    } catch (error: any) {
+      console.error('[Voice] Error sending voice message:', error);
+      console.error('[Voice] Error details:', {
+        message: error.message,
+        stack: error.stack,
+      });
       setMessages(prev => prev.filter(m => m.id !== tempId));
       setAlertModal({
         visible: true,
         title: 'Kļūda',
-        message: 'Neizdevās apstrādāt balss ziņu. Lūdzu, mēģiniet vēlreiz vai izmantojiet teksta ievadi.',
+        message: `Neizdevās apstrādāt balss ziņu: ${error.message || 'Nezināma kļūda'}. Lūdzu, mēģiniet vēlreiz vai izmantojiet teksta ievadi.`,
       });
     } finally {
       setSending(false);

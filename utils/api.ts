@@ -1,3 +1,4 @@
+
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
@@ -235,13 +236,22 @@ export const authenticatedDelete = async <T = any>(endpoint: string, data: any =
 };
 
 /**
- * Authenticated multipart/form-data POST request
- * Used for uploading files (e.g., audio for speech-to-text)
- * NOTE: Do NOT set Content-Type header manually — fetch sets it automatically with the boundary.
+ * Authenticated multipart/form-data POST request for file uploads
+ * Handles both web (blob) and native (file URI) platforms
+ * 
+ * @param endpoint - API endpoint path
+ * @param fileUri - File URI (native) or blob URL (web)
+ * @param fieldName - Form field name (default: 'audio')
+ * @param fileName - File name (default: 'recording.m4a')
+ * @param mimeType - MIME type (default: 'audio/m4a')
+ * @returns Parsed JSON response
  */
 export const authenticatedPostFormData = async <T = any>(
   endpoint: string,
-  formData: FormData
+  fileUri: string,
+  fieldName: string = 'audio',
+  fileName: string = 'recording.m4a',
+  mimeType: string = 'audio/m4a'
 ): Promise<T> => {
   if (!isBackendConfigured()) {
     throw new Error("Backend URL not configured. Please rebuild the app.");
@@ -254,25 +264,58 @@ export const authenticatedPostFormData = async <T = any>(
 
   const url = `${BACKEND_URL}${endpoint}`;
   console.log("[API] Calling (multipart):", url, "POST");
+  console.log("[API] File URI:", fileUri);
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      // Do NOT set Content-Type here — fetch sets it automatically with boundary
-    },
-    body: formData,
-  });
+  try {
+    const formData = new FormData();
 
-  if (!response.ok) {
-    const text = await response.text();
-    console.error("[API] Error response:", response.status, text);
-    throw new Error(`API error: ${response.status} - ${text}`);
+    if (Platform.OS === 'web') {
+      console.log('[API] Web platform: fetching audio blob from URI');
+      const audioResponse = await fetch(fileUri);
+      const audioBlob = await audioResponse.blob();
+      console.log('[API] Audio blob size:', audioBlob.size, 'type:', audioBlob.type);
+      formData.append(fieldName, audioBlob, fileName);
+    } else {
+      console.log('[API] Native platform: appending audio file with proper format');
+      // For React Native, we need to use the proper format that fetch understands
+      formData.append(fieldName, {
+        uri: fileUri,
+        type: mimeType,
+        name: fileName,
+      } as any);
+    }
+
+    console.log('[API] FormData prepared, sending request...');
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        // Do NOT set Content-Type - fetch will set it automatically with boundary
+      },
+      body: formData,
+    });
+
+    console.log('[API] Response status:', response.status);
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("[API] Error response:", response.status, text);
+      throw new Error(`API error: ${response.status} - ${text}`);
+    }
+
+    const data = await response.json();
+    console.log("[API] Success (multipart):", data);
+    return data;
+  } catch (error: any) {
+    console.error("[API] Multipart request failed:", error);
+    console.error("[API] Error details:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+    throw error;
   }
-
-  const data = await response.json();
-  console.log("[API] Success (multipart):", data);
-  return data;
 };
 
 /**
