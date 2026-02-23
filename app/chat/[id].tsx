@@ -181,9 +181,13 @@ export default function ChatScreen() {
 
     try {
       console.log('Attempting to stop recording');
-      const uri = await audioRecorder.stop();
-      console.log('Recording stopped successfully, URI:', uri);
+      const result = await audioRecorder.stop();
+      console.log('Recording stopped successfully, result:', result);
       setIsRecording(false);
+      
+      // expo-audio returns an object with { uri, durationMillis, ... }
+      const uri = result?.uri || audioRecorder.uri;
+      console.log('Extracted URI:', uri);
       
       if (uri) {
         console.log('Valid URI received, sending voice message');
