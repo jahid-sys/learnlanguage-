@@ -462,10 +462,181 @@ describe("API Integration Tests", () => {
     });
   });
 
+  describe("Vocabulary - Get", () => {
+    let vocabConversationId: string;
+
+    // Setup: Create a conversation and send a message to potentially create vocabulary
+    test("Create conversation for vocabulary tests", async () => {
+      const res = await authenticatedApi("/api/conversations", authToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          language: "Latvian",
+          level: "beginner",
+        }),
+      });
+      await expectStatus(res, 201);
+      const data = await res.json();
+      vocabConversationId = data.conversationId;
+    });
+
+    // Send a message to potentially create vocabulary items
+    test("Send message to create vocabulary", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${vocabConversationId}/messages`,
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "Teach me new words",
+          }),
+        }
+      );
+      await expectStatus(res, 200);
+    });
+
+    // READ: GET /api/vocabulary
+    test("Get all user vocabulary (authenticated)", async () => {
+      const res = await authenticatedApi("/api/vocabulary", authToken);
+      await expectStatus(res, 200);
+      const data = await res.json();
+      expect(Array.isArray(data)).toBe(true);
+      // Check structure if items exist
+      if (data.length > 0) {
+        expect(data[0].id).toBeDefined();
+        expect(data[0].latvianWord).toBeDefined();
+        expect(data[0].englishTranslation).toBeDefined();
+        expect(data[0].createdAt).toBeDefined();
+      }
+    });
+
+    // READ: Unauthenticated request
+    test("Get vocabulary without auth returns 401", async () => {
+      const res = await api("/api/vocabulary");
+      await expectStatus(res, 401);
+    });
+
+    // READ: GET /api/conversations/{id}/vocabulary
+    test("Get vocabulary for conversation (authenticated)", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${vocabConversationId}/vocabulary`,
+        authToken
+      );
+      await expectStatus(res, 200);
+      const data = await res.json();
+      expect(Array.isArray(data)).toBe(true);
+    });
+
+    // READ: Unauthenticated request
+    test("Get conversation vocabulary without auth returns 401", async () => {
+      const res = await api(
+        `/api/conversations/${vocabConversationId}/vocabulary`
+      );
+      await expectStatus(res, 401);
+    });
+
+    // READ: Nonexistent conversation
+    test("Get vocabulary from nonexistent conversation returns 404", async () => {
+      const res = await authenticatedApi(
+        "/api/conversations/00000000-0000-0000-0000-000000000000/vocabulary",
+        authToken
+      );
+      await expectStatus(res, 404);
+    });
+  });
+
+  describe("Vocabulary - Delete", () => {
+    let deleteVocabConversationId: string;
+    let vocabItemToDelete: any;
+
+    // Setup: Create conversation and send message to generate vocabulary
+    test("Create conversation for vocab deletion tests", async () => {
+      const res = await authenticatedApi("/api/conversations", authToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          language: "Portuguese",
+          level: "intermediate",
+        }),
+      });
+      await expectStatus(res, 201);
+      const data = await res.json();
+      deleteVocabConversationId = data.conversationId;
+    });
+
+    test("Send message to create vocabulary for deletion", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${deleteVocabConversationId}/messages`,
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "Quero aprender novas palavras",
+          }),
+        }
+      );
+      await expectStatus(res, 200);
+    });
+
+    test("Get vocabulary items for deletion", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${deleteVocabConversationId}/vocabulary`,
+        authToken
+      );
+      await expectStatus(res, 200);
+      const data = await res.json();
+      if (data.length > 0) {
+        vocabItemToDelete = data[0];
+      }
+    });
+
+    // DELETE: DELETE /api/vocabulary/{id}
+    test("Delete vocabulary item", async () => {
+      if (vocabItemToDelete) {
+        const res = await authenticatedApi(
+          `/api/vocabulary/${vocabItemToDelete.id}`,
+          authToken,
+          {
+            method: "DELETE",
+          }
+        );
+        await expectStatus(res, 200);
+        const data = await res.json();
+        expect(data.success).toBe(true);
+      }
+    });
+
+    // DELETE: Unauthenticated request
+    test("Delete vocabulary without auth returns 401", async () => {
+      const res = await api(
+        "/api/vocabulary/00000000-0000-0000-0000-000000000000",
+        {
+          method: "DELETE",
+        }
+      );
+      await expectStatus(res, 401);
+    });
+
+    // DELETE: Nonexistent vocabulary
+    test("Delete nonexistent vocabulary returns 404", async () => {
+      const res = await authenticatedApi(
+        "/api/vocabulary/00000000-0000-0000-0000-000000000000",
+        authToken,
+        {
+          method: "DELETE",
+        }
+      );
+      await expectStatus(res, 404);
+    });
+  });
+
   describe("Authorization - Conversation Ownership", () => {
     let user1Token: string;
     let user1ConversationId: string;
     let user2Token: string;
+    let user1VocabItem: any;
 
     // Setup: Create second test user
     test("Sign up second test user", async () => {
@@ -487,6 +658,36 @@ describe("API Integration Tests", () => {
       await expectStatus(res, 201);
       const data = await res.json();
       user1ConversationId = data.conversationId;
+    });
+
+    // Send a message to create vocabulary
+    test("User 1 sends message to create vocabulary", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${user1ConversationId}/messages`,
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "Insegnami parole nuove",
+          }),
+        }
+      );
+      await expectStatus(res, 200);
+    });
+
+    // Get User 1's vocabulary for later authorization tests
+    test("Get User 1's vocabulary", async () => {
+      const res = await authenticatedApi("/api/vocabulary", authToken);
+      await expectStatus(res, 200);
+      const data = await res.json();
+      // Find a vocabulary item from user1ConversationId
+      const user1Vocab = data.find(
+        (v: any) => v.conversationId === user1ConversationId
+      );
+      if (user1Vocab) {
+        user1VocabItem = user1Vocab;
+      }
     });
 
     // AUTHORIZATION: User 2 should not access User 1's conversation
@@ -556,6 +757,29 @@ describe("API Integration Tests", () => {
         }
       );
       await expectStatus(res, 403);
+    });
+
+    // AUTHORIZATION: User 2 cannot access User 1's conversation vocabulary
+    test("User 2 cannot access User 1's conversation vocabulary (403)", async () => {
+      const res = await authenticatedApi(
+        `/api/conversations/${user1ConversationId}/vocabulary`,
+        user2Token
+      );
+      await expectStatus(res, 403);
+    });
+
+    // AUTHORIZATION: User 2 cannot delete User 1's vocabulary items
+    test("User 2 cannot delete User 1's vocabulary item (403)", async () => {
+      if (user1VocabItem) {
+        const res = await authenticatedApi(
+          `/api/vocabulary/${user1VocabItem.id}`,
+          user2Token,
+          {
+            method: "DELETE",
+          }
+        );
+        await expectStatus(res, 403);
+      }
     });
   });
 });

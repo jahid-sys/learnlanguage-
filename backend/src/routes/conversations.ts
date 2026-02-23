@@ -65,6 +65,77 @@ interface CreateMessageResponseWithAudio extends CreateMessageResponse {
   audioUrl?: string;
 }
 
+interface VocabularyPair {
+  latvianWord: string;
+  englishTranslation: string;
+  context: string;
+}
+
+// Extract vocabulary pairs from text
+// Looks for patterns like: "word (translation)" or "word - translation"
+function extractVocabulary(text: string): VocabularyPair[] {
+  const vocabulary: VocabularyPair[] = [];
+  const seen = new Set<string>();
+
+  // Pattern 1: "word (translation)" or "word(translation)"
+  const pattern1 = /(\w+)\s*\(([^)]+)\)/g;
+  let match;
+
+  while ((match = pattern1.exec(text)) !== null) {
+    const word = match[1].trim();
+    const translation = match[2].trim();
+
+    // Create unique key to avoid duplicates
+    const key = `${word.toLowerCase()}-${translation.toLowerCase()}`;
+
+    if (!seen.has(key) && word.length > 1 && translation.length > 1) {
+      seen.add(key);
+
+      // Extract surrounding context (sentence containing the vocabulary)
+      const start = Math.max(0, match.index - 50);
+      const end = Math.min(text.length, match.index + match[0].length + 50);
+      const context = text.substring(start, end).trim();
+
+      vocabulary.push({
+        latvianWord: word,
+        englishTranslation: translation,
+        context,
+      });
+    }
+  }
+
+  // Pattern 2: "word - translation" or "word — translation"
+  const pattern2 = /(\w+)\s*[-–—]\s*([^.,\n]+)/g;
+
+  while ((match = pattern2.exec(text)) !== null) {
+    const word = match[1].trim();
+    const translation = match[2].trim();
+
+    // Skip if translation contains multiple words with hyphens (likely not a vocabulary pair)
+    if (translation.split(/\s+/).length > 3) {
+      continue;
+    }
+
+    const key = `${word.toLowerCase()}-${translation.toLowerCase()}`;
+
+    if (!seen.has(key) && word.length > 1 && translation.length > 1) {
+      seen.add(key);
+
+      const start = Math.max(0, match.index - 50);
+      const end = Math.min(text.length, match.index + match[0].length + 50);
+      const context = text.substring(start, end).trim();
+
+      vocabulary.push({
+        latvianWord: word,
+        englishTranslation: translation,
+        context,
+      });
+    }
+  }
+
+  return vocabulary;
+}
+
 export function registerConversationRoutes(app: App) {
   const requireAuth = app.requireAuth();
 
@@ -458,6 +529,46 @@ Always respond in ${conversation.language} when the student uses ${conversation.
             content: aiResponse,
           })
           .returning();
+
+        // Extract and save vocabulary from AI response
+        try {
+          app.logger.info({ conversationId: id }, 'Extracting vocabulary from AI response');
+
+          const vocabularyPairs = extractVocabulary(aiResponse);
+
+          if (vocabularyPairs.length > 0) {
+            // Check which vocabulary items already exist for this conversation
+            const existingVocab = await app.db
+              .select()
+              .from(schema.vocabulary)
+              .where(eq(schema.vocabulary.conversationId, id));
+
+            const existingKeys = new Set(
+              existingVocab.map((v) => `${v.latvianWord.toLowerCase()}-${v.englishTranslation.toLowerCase()}`)
+            );
+
+            // Filter out duplicates and insert new vocabulary
+            const newVocabulary = vocabularyPairs.filter(
+              (pair) => !existingKeys.has(`${pair.latvianWord.toLowerCase()}-${pair.englishTranslation.toLowerCase()}`)
+            );
+
+            if (newVocabulary.length > 0) {
+              await app.db.insert(schema.vocabulary).values(
+                newVocabulary.map((pair) => ({
+                  conversationId: id,
+                  userId,
+                  latvianWord: pair.latvianWord,
+                  englishTranslation: pair.englishTranslation,
+                  context: pair.context,
+                }))
+              );
+
+              app.logger.info({ conversationId: id, count: newVocabulary.length }, 'Vocabulary items saved');
+            }
+          }
+        } catch (vocabError) {
+          app.logger.warn({ err: vocabError, conversationId: id }, 'Failed to extract vocabulary (continuing without vocabulary save)');
+        }
 
         // Generate audio response in the target language
         let audioUrl: string | undefined;

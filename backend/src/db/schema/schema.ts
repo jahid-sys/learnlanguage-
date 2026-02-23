@@ -19,13 +19,31 @@ export const messages = pgTable('messages', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const vocabulary = pgTable('vocabulary', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  conversationId: uuid('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  latvianWord: text('latvian_word').notNull(),
+  englishTranslation: text('english_translation').notNull(),
+  context: text('context'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const conversationsRelations = relations(conversations, ({ many }) => ({
   messages: many(messages),
+  vocabulary: many(vocabulary),
 }));
 
 export const messagesRelations = relations(messages, ({ one }) => ({
   conversation: one(conversations, {
     fields: [messages.conversationId],
+    references: [conversations.id],
+  }),
+}));
+
+export const vocabularyRelations = relations(vocabulary, ({ one }) => ({
+  conversation: one(conversations, {
+    fields: [vocabulary.conversationId],
     references: [conversations.id],
   }),
 }));

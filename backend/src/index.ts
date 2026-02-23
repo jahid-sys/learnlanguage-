@@ -2,6 +2,7 @@ import { createApplication } from "@specific-dev/framework";
 import * as appSchema from './db/schema/schema.js';
 import * as authSchema from './db/schema/auth-schema.js';
 import { registerConversationRoutes } from './routes/conversations.js';
+import { registerVocabularyRoutes } from './routes/vocabulary.js';
 
 const schema = { ...appSchema, ...authSchema };
 
@@ -19,6 +20,7 @@ app.withStorage();
 
 // Register routes
 registerConversationRoutes(app);
+registerVocabularyRoutes(app);
 
 await app.run();
 app.logger.info('Application running');
