@@ -40,6 +40,7 @@ export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
+  const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -63,6 +64,9 @@ export default function ChatScreen() {
     
     return () => {
       console.log('Cleaning up audio on unmount');
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current);
+      }
       if (audioRecorder.isRecording) {
         audioRecorder.stop().catch(err => console.error('Error stopping recording on unmount:', err));
       }
@@ -129,6 +133,11 @@ export default function ChatScreen() {
   };
 
   const startRecording = async () => {
+    if (isRecording) {
+      console.log('Already recording, ignoring start request');
+      return;
+    }
+
     try {
       console.log('Requesting microphone permissions');
       const permission = await AudioModule.requestRecordingPermissionsAsync();
@@ -150,9 +159,10 @@ export default function ChatScreen() {
       console.log('Starting recording');
       await audioRecorder.record();
       setIsRecording(true);
-      console.log('Recording started');
+      console.log('Recording started successfully');
     } catch (error) {
       console.error('Failed to start recording:', error);
+      setIsRecording(false);
       setAlertModal({ 
         visible: true, 
         title: 'Ierakstīšanas kļūda', 
@@ -164,8 +174,14 @@ export default function ChatScreen() {
   const stopRecording = async () => {
     console.log('Stop recording called, isRecording:', isRecording, 'audioRecorder.isRecording:', audioRecorder.isRecording);
     
-    if (!isRecording && !audioRecorder.isRecording) {
+    if (!isRecording) {
       console.log('Not recording, skipping stop');
+      return;
+    }
+
+    if (!audioRecorder.isRecording) {
+      console.log('Audio recorder not recording, resetting state');
+      setIsRecording(false);
       return;
     }
 
@@ -178,6 +194,13 @@ export default function ChatScreen() {
       
       if (uri) {
         await sendVoiceMessage(uri);
+      } else {
+        console.warn('No URI returned from recording');
+        setAlertModal({
+          visible: true,
+          title: 'Kļūda',
+          message: 'Ieraksts bija pārāk īss. Lūdzu, mēģiniet vēlreiz un turiet mikrofonu ilgāk.',
+        });
       }
     } catch (error) {
       console.error('Error stopping recording:', error);
@@ -187,6 +210,17 @@ export default function ChatScreen() {
         title: 'Kļūda', 
         message: 'Neizdevās apstrādāt balss ierakstu.' 
       });
+    }
+  };
+
+  const handleMicPress = () => {
+    console.log('Mic button pressed');
+    if (isRecording) {
+      console.log('Stopping recording from button press');
+      stopRecording();
+    } else {
+      console.log('Starting recording from button press');
+      startRecording();
     }
   };
 
@@ -507,7 +541,7 @@ export default function ChatScreen() {
             {!isRecording && (
               <TextInput
                 style={[styles.input, { color: colors.text }]}
-                placeholder="Rakstiet vai turiet mikrofonu, lai runātu..."
+                placeholder="Rakstiet vai nospiediet mikrofonu, lai runātu..."
                 placeholderTextColor={colors.textSecondary}
                 value={inputText}
                 onChangeText={setInputText}
@@ -520,7 +554,7 @@ export default function ChatScreen() {
               <View style={styles.recordingIndicator}>
                 <View style={styles.recordingDot} />
                 <Text style={[styles.recordingText, { color: colors.text }]}>
-                  Ieraksta...
+                  Ieraksta... (nospiediet, lai apturētu)
                 </Text>
               </View>
             )}
@@ -551,8 +585,7 @@ export default function ChatScreen() {
                     backgroundColor: isRecording ? '#EF4444' : colors.primary,
                   },
                 ]}
-                onPressIn={startRecording}
-                onPressOut={stopRecording}
+                onPress={handleMicPress}
                 disabled={sending}
               >
                 <IconSymbol
@@ -666,7 +699,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   recordingText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '500',
   },
   sendButton: {
