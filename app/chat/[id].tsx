@@ -20,7 +20,13 @@ import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useAuth } from '@/contexts/AuthContext';
 import { authenticatedGet, authenticatedPost, authenticatedPostFormData } from '@/utils/api';
-import { Audio } from 'expo-av';
+import { 
+  useAudioPlayer, 
+  useAudioRecorder, 
+  AudioModule,
+  RecordingOptions,
+  RecordingPresets
+} from 'expo-audio';
 
 interface Message {
   id: string;
@@ -39,13 +45,14 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [alertModal, setAlertModal] = useState<{ visible: boolean; title: string; message: string }>({
     visible: false, title: '', message: '',
   });
+
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioPlayer = useAudioPlayer('');
 
   useEffect(() => {
     console.log('ChatScreen mounted, conversationId:', id);
@@ -55,23 +62,33 @@ export default function ChatScreen() {
     }
     
     return () => {
-      if (sound) {
-        console.log('Unloading sound on unmount');
-        sound.unloadAsync();
+      console.log('Cleaning up audio on unmount');
+      if (audioRecorder.isRecording) {
+        audioRecorder.stop();
       }
-      if (recording) {
-        console.log('Stopping recording on unmount');
-        recording.stopAndUnloadAsync();
-      }
+      audioPlayer.remove();
     };
   }, [id, user]);
+
+  useEffect(() => {
+    const subscription = audioPlayer.addListener('playbackStatusUpdate', (status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        console.log('Audio playback finished');
+        setPlayingAudio(null);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   const setupAudio = async () => {
     try {
       console.log('Setting up audio mode');
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await AudioModule.setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
     } catch (error) {
       console.error('Error setting up audio:', error);
@@ -89,7 +106,7 @@ export default function ChatScreen() {
         const welcomeMessage: Message = {
           id: 'welcome',
           role: 'assistant',
-          content: 'Hello! I\'m your AI language tutor. Let\'s practice together! Tap the microphone to speak or type your message.',
+          content: 'Sveiki! Es esmu jūsu AI valodas skolotājs. Sāksim mācīties kopā! Nospiediet mikrofonu, lai runātu, vai ierakstiet savu ziņu.',
           createdAt: new Date().toISOString(),
         };
         setMessages([welcomeMessage]);
@@ -98,11 +115,11 @@ export default function ChatScreen() {
       }
     } catch (error) {
       console.error('[API] Error loading messages:', error);
-      setAlertModal({ visible: true, title: 'Error', message: 'Failed to load messages. Please go back and try again.' });
+      setAlertModal({ visible: true, title: 'Kļūda', message: 'Neizdevās ielādēt ziņas. Lūdzu, atgriezieties un mēģiniet vēlreiz.' });
       const welcomeMessage: Message = {
         id: 'welcome',
         role: 'assistant',
-        content: 'Hello! I\'m your AI language tutor. Let\'s practice together! Tap the microphone to speak or type your message.',
+        content: 'Sveiki! Es esmu jūsu AI valodas skolotājs. Sāksim mācīties kopā! Nospiediet mikrofonu, lai runātu, vai ierakstiet savu ziņu.',
         createdAt: new Date().toISOString(),
       };
       setMessages([welcomeMessage]);
@@ -114,42 +131,38 @@ export default function ChatScreen() {
   const startRecording = async () => {
     try {
       console.log('Requesting microphone permissions');
-      const permission = await Audio.requestPermissionsAsync();
+      const permission = await AudioModule.requestRecordingPermissionsAsync();
       
-      if (permission.status !== 'granted') {
+      if (!permission.granted) {
         setAlertModal({ 
           visible: true, 
-          title: 'Permission Required', 
-          message: 'Please grant microphone access to use voice chat.' 
+          title: 'Nepieciešama atļauja', 
+          message: 'Lūdzu, atļaujiet piekļuvi mikrofonam, lai izmantotu balss tērzēšanu.' 
         });
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await AudioModule.setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
       console.log('Starting recording');
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      
-      setRecording(newRecording);
+      await audioRecorder.record();
       setIsRecording(true);
       console.log('Recording started');
     } catch (error) {
       console.error('Failed to start recording:', error);
       setAlertModal({ 
         visible: true, 
-        title: 'Recording Error', 
-        message: 'Failed to start recording. Please try again.' 
+        title: 'Ierakstīšanas kļūda', 
+        message: 'Neizdevās sākt ierakstīšanu. Lūdzu, mēģiniet vēlreiz.' 
       });
     }
   };
 
   const stopRecording = async () => {
-    if (!recording) {
+    if (!audioRecorder.isRecording) {
       return;
     }
 
@@ -157,11 +170,8 @@ export default function ChatScreen() {
     setIsRecording(false);
     
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      const uri = await audioRecorder.stop();
       console.log('Recording stopped, URI:', uri);
-      
-      setRecording(null);
       
       if (uri) {
         await sendVoiceMessage(uri);
@@ -170,8 +180,8 @@ export default function ChatScreen() {
       console.error('Error stopping recording:', error);
       setAlertModal({ 
         visible: true, 
-        title: 'Error', 
-        message: 'Failed to process voice recording.' 
+        title: 'Kļūda', 
+        message: 'Neizdevās apstrādāt balss ierakstu.' 
       });
     }
   };
@@ -184,7 +194,7 @@ export default function ChatScreen() {
     const tempUserMessage: Message = {
       id: tempId,
       role: 'user',
-      content: '🎤 Transcribing...',
+      content: '🎤 Transkribē...',
       createdAt: new Date().toISOString(),
     };
     setMessages(prev => [...prev, tempUserMessage]);
@@ -226,8 +236,8 @@ export default function ChatScreen() {
         setMessages(prev => prev.filter(m => m.id !== tempId));
         setAlertModal({
           visible: true,
-          title: 'No Speech Detected',
-          message: 'Could not detect any speech in the recording. Please try again.',
+          title: 'Runa nav noteikta',
+          message: 'Neizdevās noteikt runu ierakstā. Lūdzu, mēģiniet vēlreiz.',
         });
         return;
       }
@@ -267,8 +277,8 @@ export default function ChatScreen() {
       setMessages(prev => prev.filter(m => m.id !== tempId));
       setAlertModal({
         visible: true,
-        title: 'Error',
-        message: 'Failed to process voice message. Please try again or use text input.',
+        title: 'Kļūda',
+        message: 'Neizdevās apstrādāt balss ziņu. Lūdzu, mēģiniet vēlreiz vai izmantojiet teksta ievadi.',
       });
     } finally {
       setSending(false);
@@ -323,7 +333,7 @@ export default function ChatScreen() {
       console.error('[API] Error sending message:', error);
       setMessages(prev => prev.filter(m => m.id !== tempUserMessage.id));
       setInputText(userMessage);
-      setAlertModal({ visible: true, title: 'Error', message: 'Failed to send message. Please try again.' });
+      setAlertModal({ visible: true, title: 'Kļūda', message: 'Neizdevās nosūtīt ziņu. Lūdzu, mēģiniet vēlreiz.' });
     } finally {
       setSending(false);
     }
@@ -333,39 +343,26 @@ export default function ChatScreen() {
     try {
       console.log('Playing audio for message:', messageId);
       
-      if (sound) {
-        await sound.unloadAsync();
-      }
-
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
-        { shouldPlay: true }
-      );
-      
-      setSound(newSound);
+      audioPlayer.replace(audioUrl);
+      audioPlayer.play();
       setPlayingAudio(messageId);
-      
-      newSound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          console.log('Audio playback finished');
-          setPlayingAudio(null);
-        }
-      });
     } catch (error) {
       console.error('Error playing audio:', error);
       setAlertModal({ 
         visible: true, 
-        title: 'Playback Error', 
-        message: 'Failed to play audio response.' 
+        title: 'Atskaņošanas kļūda', 
+        message: 'Neizdevās atskaņot audio atbildi.' 
       });
     }
   };
 
   const stopAudio = async () => {
-    if (sound) {
+    try {
       console.log('Stopping audio playback');
-      await sound.stopAsync();
+      audioPlayer.pause();
       setPlayingAudio(null);
+    } catch (error) {
+      console.error('Error stopping audio:', error);
     }
   };
 
@@ -373,10 +370,9 @@ export default function ChatScreen() {
     const date = new Date(timestamp);
     const hours = date.getHours();
     const minutes = date.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
+    const displayHours = hours < 10 ? `0${hours}` : hours;
     const displayMinutes = minutes < 10 ? `0${minutes}` : minutes;
-    const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
+    const timeString = `${displayHours}:${displayMinutes}`;
     return timeString;
   };
 
@@ -385,8 +381,8 @@ export default function ChatScreen() {
       <>
         <Stack.Screen
           options={{
-            title: 'Practice',
-            headerBackTitle: 'Back',
+            title: 'Prakse',
+            headerBackTitle: 'Atpakaļ',
           }}
         />
         <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
@@ -402,8 +398,8 @@ export default function ChatScreen() {
     <>
       <Stack.Screen
         options={{
-          title: 'Practice',
-          headerBackTitle: 'Back',
+          title: 'Prakse',
+          headerBackTitle: 'Atpakaļ',
         }}
       />
       <Modal
@@ -423,7 +419,7 @@ export default function ChatScreen() {
               style={chatStyles.alertButton}
               onPress={() => setAlertModal(prev => ({ ...prev, visible: false }))}
             >
-              <Text style={chatStyles.alertButtonText}>OK</Text>
+              <Text style={chatStyles.alertButtonText}>Labi</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -507,7 +503,7 @@ export default function ChatScreen() {
             {!isRecording && (
               <TextInput
                 style={[styles.input, { color: colors.text }]}
-                placeholder="Type or hold mic to speak..."
+                placeholder="Rakstiet vai turiet mikrofonu, lai runātu..."
                 placeholderTextColor={colors.textSecondary}
                 value={inputText}
                 onChangeText={setInputText}
@@ -520,7 +516,7 @@ export default function ChatScreen() {
               <View style={styles.recordingIndicator}>
                 <View style={styles.recordingDot} />
                 <Text style={[styles.recordingText, { color: colors.text }]}>
-                  Recording...
+                  Ieraksta...
                 </Text>
               </View>
             )}
