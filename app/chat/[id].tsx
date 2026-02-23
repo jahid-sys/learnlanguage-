@@ -28,15 +28,25 @@ interface Message {
   createdAt: string;
 }
 
+interface VocabularyItem {
+  id: string;
+  latvianWord: string;
+  englishTranslation: string;
+  context?: string;
+  createdAt: string;
+}
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   
   const [messages, setMessages] = useState<Message[]>([]);
+  const [vocabulary, setVocabulary] = useState<VocabularyItem[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [showVocabulary, setShowVocabulary] = useState(false);
   const [alertModal, setAlertModal] = useState<{ visible: boolean; title: string; message: string }>({
     visible: false, title: '', message: '',
   });
@@ -45,6 +55,7 @@ export default function ChatScreen() {
     console.log('ChatScreen mounted, conversationId:', id);
     if (user && id) {
       loadMessages();
+      loadVocabulary();
     }
   }, [id, user]);
 
@@ -78,6 +89,18 @@ export default function ChatScreen() {
       setMessages([welcomeMessage]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadVocabulary = async () => {
+    console.log('[API] Loading vocabulary for conversation:', id);
+    try {
+      console.log('[API] Requesting /api/conversations/' + id + '/vocabulary...');
+      const data = await authenticatedGet<VocabularyItem[]>(`/api/conversations/${id}/vocabulary`);
+      console.log('[API] Loaded vocabulary:', data.length, 'items');
+      setVocabulary(data);
+    } catch (error) {
+      console.error('[API] Error loading vocabulary:', error);
     }
   };
 
@@ -117,6 +140,9 @@ export default function ChatScreen() {
       
       setMessages(prev => [...prev, aiResponse]);
       
+      // Reload vocabulary after AI response (it may have extracted new words)
+      loadVocabulary();
+      
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
@@ -140,6 +166,26 @@ export default function ChatScreen() {
     return timeString;
   };
 
+  const extractVocabularyFromMessage = (content: string): Array<{ latvian: string; english: string }> => {
+    const vocabList: Array<{ latvian: string; english: string }> = [];
+    
+    // Pattern 1: "word (translation)"
+    const pattern1 = /(\w+)\s*\(([^)]+)\)/g;
+    let match1;
+    while ((match1 = pattern1.exec(content)) !== null) {
+      vocabList.push({ latvian: match1[1], english: match1[2] });
+    }
+    
+    // Pattern 2: "latvian - english" or "latvian → english"
+    const pattern2 = /(\w+)\s*[-→]\s*(\w+)/g;
+    let match2;
+    while ((match2 = pattern2.exec(content)) !== null) {
+      vocabList.push({ latvian: match2[1], english: match2[2] });
+    }
+    
+    return vocabList;
+  };
+
   if (loading) {
     return (
       <>
@@ -147,6 +193,7 @@ export default function ChatScreen() {
           options={{
             title: 'Prakse',
             headerBackTitle: 'Atpakaļ',
+            headerRight: () => null,
           }}
         />
         <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
@@ -157,6 +204,8 @@ export default function ChatScreen() {
   }
 
   const hasText = inputText.trim().length > 0;
+  const vocabularyCount = vocabulary.length;
+  const vocabularyCountText = vocabularyCount.toString();
 
   return (
     <>
@@ -164,6 +213,23 @@ export default function ChatScreen() {
         options={{
           title: 'Prakse',
           headerBackTitle: 'Atpakaļ',
+          headerRight: () =>
+            vocabularyCount > 0 ? (
+              <TouchableOpacity
+                onPress={() => setShowVocabulary(true)}
+                style={styles.vocabularyButton}
+              >
+                <IconSymbol
+                  ios_icon_name="book.fill"
+                  android_material_icon_name="menu-book"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={[styles.vocabularyButtonText, { color: colors.primary }]}>
+                  {vocabularyCountText}
+                </Text>
+              </TouchableOpacity>
+            ) : null,
         }}
       />
       <Modal
@@ -188,6 +254,42 @@ export default function ChatScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal
+        visible={showVocabulary}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowVocabulary(false)}
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]} edges={['top']}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Vārdnīca šai sarunai</Text>
+            <TouchableOpacity onPress={() => setShowVocabulary(false)} style={styles.closeModalButton}>
+              <IconSymbol ios_icon_name="xmark" android_material_icon_name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.vocabularyList} contentContainerStyle={styles.vocabularyListContent}>
+            {vocabulary.map((item) => (
+              <View key={item.id} style={[styles.vocabularyItem, { backgroundColor: colors.card }]}>
+                <View style={styles.vocabularyItemHeader}>
+                  <Text style={[styles.vocabularyLatvian, { color: colors.text }]}>{item.latvianWord}</Text>
+                  <IconSymbol
+                    ios_icon_name="arrow.right"
+                    android_material_icon_name="arrow-forward"
+                    size={16}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={[styles.vocabularyEnglish, { color: colors.textSecondary }]}>{item.englishTranslation}</Text>
+                </View>
+                {item.context && (
+                  <Text style={[styles.vocabularyContext, { color: colors.textSecondary }]}>{item.context}</Text>
+                )}
+              </View>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
         <KeyboardAvoidingView
           style={styles.keyboardView}
@@ -204,40 +306,72 @@ export default function ChatScreen() {
             {messages.map((message) => {
               const isUser = message.role === 'user';
               const timeDisplay = formatTime(message.createdAt);
+              const messageVocab = !isUser ? extractVocabularyFromMessage(message.content) : [];
               
               return (
-                <View
-                  key={message.id}
-                  style={[
-                    styles.messageBubble,
-                    isUser ? styles.userBubble : styles.assistantBubble,
-                  ]}
-                >
-                  {isUser ? (
-                    <LinearGradient
-                      colors={[colors.primary, colors.primaryDark]}
-                      style={styles.userBubbleGradient}
-                    >
-                      <Text style={styles.messageText}>
-                        {message.content}
-                      </Text>
-                      <View style={styles.messageFooter}>
-                        <Text style={styles.userMessageTime}>
-                          {timeDisplay}
+                <View key={message.id}>
+                  <View
+                    style={[
+                      styles.messageBubble,
+                      isUser ? styles.userBubble : styles.assistantBubble,
+                    ]}
+                  >
+                    {isUser ? (
+                      <LinearGradient
+                        colors={[colors.primary, colors.primaryDark]}
+                        style={styles.userBubbleGradient}
+                      >
+                        <Text style={styles.messageText}>
+                          {message.content}
                         </Text>
-                      </View>
-                    </LinearGradient>
-                  ) : (
-                    <>
-                      <Text style={[styles.messageText, { color: colors.text }]}>
-                        {message.content}
-                      </Text>
-                      <View style={styles.messageFooter}>
-                        <Text style={[styles.messageTime, { color: colors.textSecondary }]}>
-                          {timeDisplay}
+                        <View style={styles.messageFooter}>
+                          <Text style={styles.userMessageTime}>
+                            {timeDisplay}
+                          </Text>
+                        </View>
+                      </LinearGradient>
+                    ) : (
+                      <>
+                        <Text style={[styles.messageText, { color: colors.text }]}>
+                          {message.content}
                         </Text>
+                        <View style={styles.messageFooter}>
+                          <Text style={[styles.messageTime, { color: colors.textSecondary }]}>
+                            {timeDisplay}
+                          </Text>
+                        </View>
+                      </>
+                    )}
+                  </View>
+                  {messageVocab.length > 0 && (
+                    <View style={[styles.inlineVocabulary, { backgroundColor: colors.card }]}>
+                      <View style={styles.inlineVocabularyHeader}>
+                        <IconSymbol
+                          ios_icon_name="book.fill"
+                          android_material_icon_name="menu-book"
+                          size={14}
+                          color={colors.primary}
+                        />
+                        <Text style={[styles.inlineVocabularyTitle, { color: colors.primary }]}>Vārdnīca:</Text>
                       </View>
-                    </>
+                      {messageVocab.map((vocab, idx) => {
+                        const latvianWord = vocab.latvian;
+                        const englishWord = vocab.english;
+                        return (
+                          <View key={idx} style={styles.inlineVocabularyItem}>
+                            <Text style={[styles.inlineVocabularyText, { color: colors.text }]}>
+                              {latvianWord}
+                            </Text>
+                            <Text style={[styles.inlineVocabularyText, { color: colors.textSecondary }]}>
+                              {' → '}
+                            </Text>
+                            <Text style={[styles.inlineVocabularyText, { color: colors.textSecondary }]}>
+                              {englishWord}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
                   )}
                 </View>
               );
@@ -346,6 +480,32 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: 'rgba(255, 255, 255, 0.8)',
   },
+  inlineVocabulary: {
+    maxWidth: '80%',
+    alignSelf: 'flex-start',
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 12,
+    marginLeft: 8,
+  },
+  inlineVocabularyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  inlineVocabularyTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  inlineVocabularyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  inlineVocabularyText: {
+    fontSize: 14,
+  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -368,6 +528,64 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  vocabularyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+  },
+  vocabularyButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  closeModalButton: {
+    padding: 4,
+  },
+  vocabularyList: {
+    flex: 1,
+  },
+  vocabularyListContent: {
+    padding: 20,
+  },
+  vocabularyItem: {
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  vocabularyItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  vocabularyLatvian: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  vocabularyEnglish: {
+    fontSize: 15,
+  },
+  vocabularyContext: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    lineHeight: 18,
   },
 });
 
