@@ -64,7 +64,7 @@ export default function ChatScreen() {
     return () => {
       console.log('Cleaning up audio on unmount');
       if (audioRecorder.isRecording) {
-        audioRecorder.stop();
+        audioRecorder.stop().catch(err => console.error('Error stopping recording on unmount:', err));
       }
       audioPlayer.remove();
     };
@@ -162,22 +162,26 @@ export default function ChatScreen() {
   };
 
   const stopRecording = async () => {
-    if (!audioRecorder.isRecording) {
+    console.log('Stop recording called, isRecording:', isRecording, 'audioRecorder.isRecording:', audioRecorder.isRecording);
+    
+    if (!isRecording && !audioRecorder.isRecording) {
+      console.log('Not recording, skipping stop');
       return;
     }
 
     console.log('Stopping recording');
-    setIsRecording(false);
     
     try {
       const uri = await audioRecorder.stop();
       console.log('Recording stopped, URI:', uri);
+      setIsRecording(false);
       
       if (uri) {
         await sendVoiceMessage(uri);
       }
     } catch (error) {
       console.error('Error stopping recording:', error);
+      setIsRecording(false);
       setAlertModal({ 
         visible: true, 
         title: 'Kļūda', 
