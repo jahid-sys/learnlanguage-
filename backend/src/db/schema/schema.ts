@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, date } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const conversations = pgTable('conversations', {
@@ -40,6 +40,17 @@ export const messagesRelations = relations(messages, ({ one }) => ({
     references: [conversations.id],
   }),
 }));
+
+export const dailyVocabulary = pgTable('daily_vocabulary', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  latvianWord: text('latvian_word').notNull(),
+  englishTranslation: text('english_translation').notNull(),
+  context: text('context'),
+  topic: text('topic').notNull(),
+  date: date('date').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const vocabularyRelations = relations(vocabulary, ({ one }) => ({
   conversation: one(conversations, {

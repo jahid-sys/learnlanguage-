@@ -546,6 +546,30 @@ describe("API Integration Tests", () => {
     });
   });
 
+  describe("Vocabulary - Daily", () => {
+    // READ: GET /api/vocabulary/daily
+    test("Get daily vocabulary words (authenticated)", async () => {
+      const res = await authenticatedApi("/api/vocabulary/daily", authToken);
+      await expectStatus(res, 200);
+      const data = await res.json();
+      expect(data.topic).toBeDefined();
+      expect(Array.isArray(data.words)).toBe(true);
+      // Check structure if words exist
+      if (data.words.length > 0) {
+        expect(data.words[0].id).toBeDefined();
+        expect(data.words[0].latvianWord).toBeDefined();
+        expect(data.words[0].englishTranslation).toBeDefined();
+        expect(data.words[0].date).toBeDefined();
+      }
+    });
+
+    // READ: Unauthenticated request
+    test("Get daily vocabulary without auth returns 401", async () => {
+      const res = await api("/api/vocabulary/daily");
+      await expectStatus(res, 401);
+    });
+  });
+
   describe("Vocabulary - Delete", () => {
     let deleteVocabConversationId: string;
     let vocabItemToDelete: any;
