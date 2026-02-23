@@ -82,7 +82,7 @@ export default function HomeScreen() {
 
   const createConversation = async () => {
     if (!selectedLevel) {
-      setAlertModal({ visible: true, title: 'Missing Information', message: 'Please select a level.' });
+      setAlertModal({ visible: true, title: 'Trūkst informācijas', message: 'Lūdzu, izvēlieties līmeni.' });
       return;
     }
 
@@ -100,7 +100,7 @@ export default function HomeScreen() {
       router.push(`/chat/${response.conversationId}`);
     } catch (error) {
       console.error('[API] Error creating conversation:', error);
-      setAlertModal({ visible: true, title: 'Error', message: 'Failed to create conversation. Please try again.' });
+      setAlertModal({ visible: true, title: 'Kļūda', message: 'Neizdevās izveidot sarunu. Lūdzu, mēģiniet vēlreiz.' });
     } finally {
       setCreating(false);
     }
@@ -110,10 +110,10 @@ export default function HomeScreen() {
     setDeleteTarget(conversationId);
     setAlertModal({
       visible: true,
-      title: 'Delete Conversation',
-      message: 'Are you sure you want to delete this conversation? This action cannot be undone.',
+      title: 'Dzēst sarunu',
+      message: 'Vai tiešām vēlaties dzēst šo sarunu? Šo darbību nevar atsaukt.',
       onConfirm: () => deleteConversation(conversationId),
-      confirmText: 'Delete',
+      confirmText: 'Dzēst',
       confirmStyle: 'destructive',
     });
   };
@@ -126,7 +126,7 @@ export default function HomeScreen() {
       setConversations(prev => prev.filter(c => c.conversationId !== conversationId));
     } catch (error) {
       console.error('[API] Error deleting conversation:', error);
-      setAlertModal({ visible: true, title: 'Error', message: 'Failed to delete conversation. Please try again.' });
+      setAlertModal({ visible: true, title: 'Kļūda', message: 'Neizdevās dzēst sarunu. Lūdzu, mēģiniet vēlreiz.' });
     } finally {
       setDeleteTarget(null);
     }
@@ -157,15 +157,15 @@ export default function HomeScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.authPrompt}>
             <Text style={styles.authIcon}>🇱🇻</Text>
-            <Text style={styles.authTitle}>Learn Latvian!</Text>
+            <Text style={styles.authTitle}>Mācies latviešu valodu!</Text>
             <Text style={styles.authSubtitle}>
-              Practice Latvian with AI-powered conversations
+              Praktizē latviešu valodu ar AI sarunām
             </Text>
             <TouchableOpacity 
               style={styles.authButton}
               onPress={() => router.push('/auth')}
             >
-              <Text style={styles.authButtonText}>Get Started</Text>
+              <Text style={styles.authButtonText}>Sākt</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -174,7 +174,7 @@ export default function HomeScreen() {
   }
 
   const userName = user.name || user.email?.split('@')[0] || 'there';
-  const greetingText = 'Hello';
+  const greetingText = 'Sveiki';
   const userNameDisplay = userName;
 
   return (
@@ -200,7 +200,7 @@ export default function HomeScreen() {
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Start Learning</Text>
+          <Text style={styles.sectionTitle}>Sākt mācīties</Text>
           <TouchableOpacity 
             style={styles.newConversationCard}
             onPress={() => setShowNewConversation(true)}
@@ -217,8 +217,8 @@ export default function HomeScreen() {
               />
             </LinearGradient>
             <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>New Conversation</Text>
-              <Text style={styles.cardSubtitle}>Practice with AI tutor</Text>
+              <Text style={styles.cardTitle}>Jauna saruna</Text>
+              <Text style={styles.cardSubtitle}>Praktizē ar AI skolotāju</Text>
             </View>
             <IconSymbol 
               ios_icon_name="chevron.right" 
@@ -235,7 +235,7 @@ export default function HomeScreen() {
           </View>
         ) : conversations.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Recent Conversations</Text>
+            <Text style={styles.sectionTitle}>Nesenas sarunas</Text>
             {conversations.map((conv, index) => {
               const language = LANGUAGES.find(l => l.name === conv.language || l.code === conv.language);
               const languageFlag = language?.flag || '🇱🇻';
@@ -280,9 +280,9 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>💬</Text>
-            <Text style={styles.emptyTitle}>No conversations yet</Text>
+            <Text style={styles.emptyTitle}>Vēl nav sarunu</Text>
             <Text style={styles.emptySubtitle}>
-              Start your first conversation to begin learning
+              Sāciet savu pirmo sarunu, lai sāktu mācīties
             </Text>
           </View>
         )}
@@ -307,7 +307,7 @@ export default function HomeScreen() {
                   style={[styles.alertButton, styles.alertCancelButton]}
                   onPress={() => setAlertModal(prev => ({ ...prev, visible: false }))}
                 >
-                  <Text style={[styles.alertButtonText, { color: colors.text }]}>Cancel</Text>
+                  <Text style={[styles.alertButtonText, { color: colors.text }]}>Atcelt</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
@@ -320,7 +320,7 @@ export default function HomeScreen() {
                   alertModal.onConfirm?.();
                 }}
               >
-                <Text style={styles.alertButtonText}>{alertModal.confirmText || 'OK'}</Text>
+                <Text style={styles.alertButtonText}>{alertModal.confirmText || 'Labi'}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -340,7 +340,7 @@ export default function HomeScreen() {
           />
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Conversation</Text>
+              <Text style={styles.modalTitle}>Jauna saruna</Text>
               <TouchableOpacity onPress={() => setShowNewConversation(false)}>
                 <IconSymbol 
                   ios_icon_name="xmark" 
@@ -353,10 +353,10 @@ export default function HomeScreen() {
 
             <View style={styles.languageDisplay}>
               <Text style={styles.languageDisplayFlag}>🇱🇻</Text>
-              <Text style={styles.languageDisplayText}>Latvian</Text>
+              <Text style={styles.languageDisplayText}>Latviešu</Text>
             </View>
 
-            <Text style={styles.modalLabel}>Select Level</Text>
+            <Text style={styles.modalLabel}>Izvēlieties līmeni</Text>
             <View style={styles.levelContainer}>
               {LEVELS.map((level) => {
                 const isSelected = selectedLevel === level;
@@ -395,7 +395,7 @@ export default function HomeScreen() {
               {creating ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.createButtonText}>Start Learning</Text>
+                <Text style={styles.createButtonText}>Sākt mācīties</Text>
               )}
             </TouchableOpacity>
           </View>

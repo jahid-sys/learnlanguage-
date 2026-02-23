@@ -19,20 +19,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useAuth } from '@/contexts/AuthContext';
-import { authenticatedGet, authenticatedPost, authenticatedPostFormData } from '@/utils/api';
-import { 
-  useAudioPlayer, 
-  useAudioRecorder, 
-  AudioModule,
-  RecordingPresets
-} from 'expo-audio';
+import { authenticatedGet, authenticatedPost } from '@/utils/api';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
-  audioUrl?: string;
 }
 
 export default function ChatScreen() {
@@ -44,55 +37,16 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [alertModal, setAlertModal] = useState<{ visible: boolean; title: string; message: string }>({
     visible: false, title: '', message: '',
   });
-
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const audioPlayer = useAudioPlayer('');
 
   useEffect(() => {
     console.log('ChatScreen mounted, conversationId:', id);
     if (user && id) {
       loadMessages();
-      setupAudio();
     }
-    
-    return () => {
-      console.log('Cleaning up audio on unmount');
-      if (audioRecorder.isRecording) {
-        audioRecorder.stop().catch(err => console.error('Error stopping recording on unmount:', err));
-      }
-      audioPlayer.remove();
-    };
   }, [id, user]);
-
-  useEffect(() => {
-    const subscription = audioPlayer.addListener('playbackStatusUpdate', (status) => {
-      if (status.isLoaded && status.didJustFinish) {
-        console.log('Audio playback finished');
-        setPlayingAudio(null);
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, []);
-
-  const setupAudio = async () => {
-    try {
-      console.log('Setting up audio mode');
-      await AudioModule.setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-    } catch (error) {
-      console.error('Error setting up audio:', error);
-    }
-  };
 
   const loadMessages = async () => {
     console.log('[API] Loading messages for conversation:', id);
@@ -105,7 +59,7 @@ export default function ChatScreen() {
         const welcomeMessage: Message = {
           id: 'welcome',
           role: 'assistant',
-          content: 'Sveiki! Es esmu jūsu AI valodas skolotājs. Sāksim mācīties kopā! Nospiediet mikrofonu, lai runātu, vai ierakstiet savu ziņu.',
+          content: 'Sveiki! Es esmu jūsu AI valodas skolotājs. Sāksim mācīties kopā! Ierakstiet savu ziņu.',
           createdAt: new Date().toISOString(),
         };
         setMessages([welcomeMessage]);
@@ -118,196 +72,12 @@ export default function ChatScreen() {
       const welcomeMessage: Message = {
         id: 'welcome',
         role: 'assistant',
-        content: 'Sveiki! Es esmu jūsu AI valodas skolotājs. Sāksim mācīties kopā! Nospiediet mikrofonu, lai runātu, vai ierakstiet savu ziņu.',
+        content: 'Sveiki! Es esmu jūsu AI valodas skolotājs. Sāksim mācīties kopā! Ierakstiet savu ziņu.',
         createdAt: new Date().toISOString(),
       };
       setMessages([welcomeMessage]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const startRecording = async () => {
-    if (isRecording) {
-      console.log('Already recording, ignoring start request');
-      return;
-    }
-
-    try {
-      console.log('Requesting microphone permissions');
-      const permission = await AudioModule.requestRecordingPermissionsAsync();
-      
-      if (!permission.granted) {
-        console.log('Microphone permission denied');
-        setAlertModal({ 
-          visible: true, 
-          title: 'Nepieciešama atļauja', 
-          message: 'Lūdzu, atļaujiet piekļuvi mikrofonam, lai izmantotu balss tērzēšanu.' 
-        });
-        return;
-      }
-
-      console.log('Microphone permission granted');
-
-      await AudioModule.setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-
-      console.log('Starting recording with audioRecorder.record()');
-      await audioRecorder.record();
-      
-      console.log('Recording started, audioRecorder.isRecording:', audioRecorder.isRecording);
-      setIsRecording(true);
-      console.log('Recording state updated to true');
-    } catch (error) {
-      console.error('Failed to start recording:', error);
-      setIsRecording(false);
-      setAlertModal({ 
-        visible: true, 
-        title: 'Ierakstīšanas kļūda', 
-        message: 'Neizdevās sākt ierakstīšanu. Lūdzu, mēģiniet vēlreiz.' 
-      });
-    }
-  };
-
-  const stopRecording = async () => {
-    console.log('Stop recording called, isRecording state:', isRecording, 'audioRecorder.isRecording:', audioRecorder.isRecording);
-    
-    if (!isRecording) {
-      console.log('Not recording according to state, skipping stop');
-      return;
-    }
-
-    try {
-      console.log('Attempting to stop recording');
-      const result = await audioRecorder.stop();
-      console.log('Recording stopped successfully, result:', result);
-      setIsRecording(false);
-      
-      // expo-audio returns an object with { uri, durationMillis, ... }
-      const uri = result?.uri || audioRecorder.uri;
-      console.log('Extracted URI:', uri);
-      
-      if (uri) {
-        console.log('Valid URI received, sending voice message');
-        await sendVoiceMessage(uri);
-      } else {
-        console.warn('No URI returned from recording - recording may have been too short');
-        setAlertModal({
-          visible: true,
-          title: 'Kļūda',
-          message: 'Ieraksts bija pārāk īss. Lūdzu, mēģiniet vēlreiz un turiet mikrofonu ilgāk.',
-        });
-      }
-    } catch (error) {
-      console.error('Error stopping recording:', error);
-      setIsRecording(false);
-      setAlertModal({ 
-        visible: true, 
-        title: 'Kļūda', 
-        message: 'Neizdevās apstrādāt balss ierakstu.' 
-      });
-    }
-  };
-
-  const handleMicPress = () => {
-    console.log('Mic button pressed, current isRecording:', isRecording);
-    if (isRecording) {
-      console.log('Stopping recording from button press');
-      stopRecording();
-    } else {
-      console.log('Starting recording from button press');
-      startRecording();
-    }
-  };
-
-  const sendVoiceMessage = async (audioUri: string) => {
-    console.log('[Voice] Sending voice message from URI:', audioUri);
-    setSending(true);
-
-    const tempId = `temp-${Date.now()}`;
-    const tempUserMessage: Message = {
-      id: tempId,
-      role: 'user',
-      content: '🎤 Transkribē...',
-      createdAt: new Date().toISOString(),
-    };
-    setMessages(prev => [...prev, tempUserMessage]);
-
-    try {
-      console.log('[Voice] Calling speech-to-text API with file URI:', audioUri);
-      
-      // Use the updated authenticatedPostFormData that properly handles file uploads
-      const sttResult = await authenticatedPostFormData<{ text: string; language: string }>(
-        `/api/conversations/${id}/speech-to-text`,
-        audioUri,
-        'audio',
-        'recording.m4a',
-        'audio/m4a'
-      );
-      
-      console.log('[Voice] Speech-to-text result:', sttResult);
-      
-      const transcribedText = sttResult.text;
-
-      if (!transcribedText || transcribedText.trim() === '') {
-        console.warn('[Voice] Empty transcription received');
-        setMessages(prev => prev.filter(m => m.id !== tempId));
-        setAlertModal({
-          visible: true,
-          title: 'Runa nav noteikta',
-          message: 'Neizdevās noteikt runu ierakstā. Lūdzu, mēģiniet vēlreiz.',
-        });
-        return;
-      }
-
-      console.log('[Voice] Transcription successful:', transcribedText);
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === tempId ? { ...m, content: transcribedText } : m
-        )
-      );
-
-      console.log('[Voice] Sending transcribed text to AI...');
-      const response = await authenticatedPost<{ response: string; messageId: string; audioUrl?: string }>(
-        `/api/conversations/${id}/messages`,
-        { message: transcribedText }
-      );
-      console.log('[Voice] Received AI response:', response);
-
-      const aiResponse: Message = {
-        id: response.messageId,
-        role: 'assistant',
-        content: response.response,
-        createdAt: new Date().toISOString(),
-        audioUrl: response.audioUrl ?? undefined,
-      };
-
-      setMessages(prev => [...prev, aiResponse]);
-
-      if (response.audioUrl) {
-        console.log('[Voice] Playing AI audio response');
-        await playAudio(response.audioUrl, response.messageId);
-      }
-
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    } catch (error: any) {
-      console.error('[Voice] Error sending voice message:', error);
-      console.error('[Voice] Error details:', {
-        message: error.message,
-        stack: error.stack,
-      });
-      setMessages(prev => prev.filter(m => m.id !== tempId));
-      setAlertModal({
-        visible: true,
-        title: 'Kļūda',
-        message: `Neizdevās apstrādāt balss ziņu: ${error.message || 'Nezināma kļūda'}. Lūdzu, mēģiniet vēlreiz vai izmantojiet teksta ievadi.`,
-      });
-    } finally {
-      setSending(false);
     }
   };
 
@@ -332,7 +102,7 @@ export default function ChatScreen() {
 
     try {
       console.log('[API] Requesting /api/conversations/' + id + '/messages...');
-      const response = await authenticatedPost<{ response: string; messageId: string; audioUrl?: string }>(
+      const response = await authenticatedPost<{ response: string; messageId: string }>(
         `/api/conversations/${id}/messages`,
         { message: userMessage }
       );
@@ -343,14 +113,9 @@ export default function ChatScreen() {
         role: 'assistant',
         content: response.response,
         createdAt: new Date().toISOString(),
-        audioUrl: response.audioUrl ?? undefined,
       };
       
       setMessages(prev => [...prev, aiResponse]);
-      
-      if (response.audioUrl) {
-        await playAudio(response.audioUrl, response.messageId);
-      }
       
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -362,33 +127,6 @@ export default function ChatScreen() {
       setAlertModal({ visible: true, title: 'Kļūda', message: 'Neizdevās nosūtīt ziņu. Lūdzu, mēģiniet vēlreiz.' });
     } finally {
       setSending(false);
-    }
-  };
-
-  const playAudio = async (audioUrl: string, messageId: string) => {
-    try {
-      console.log('Playing audio for message:', messageId);
-      
-      audioPlayer.replace(audioUrl);
-      audioPlayer.play();
-      setPlayingAudio(messageId);
-    } catch (error) {
-      console.error('Error playing audio:', error);
-      setAlertModal({ 
-        visible: true, 
-        title: 'Atskaņošanas kļūda', 
-        message: 'Neizdevās atskaņot audio atbildi.' 
-      });
-    }
-  };
-
-  const stopAudio = async () => {
-    try {
-      console.log('Stopping audio playback');
-      audioPlayer.pause();
-      setPlayingAudio(null);
-    } catch (error) {
-      console.error('Error stopping audio:', error);
     }
   };
 
@@ -466,7 +204,6 @@ export default function ChatScreen() {
             {messages.map((message) => {
               const isUser = message.role === 'user';
               const timeDisplay = formatTime(message.createdAt);
-              const isPlaying = playingAudio === message.id;
               
               return (
                 <View
@@ -499,19 +236,6 @@ export default function ChatScreen() {
                         <Text style={[styles.messageTime, { color: colors.textSecondary }]}>
                           {timeDisplay}
                         </Text>
-                        {message.audioUrl && (
-                          <TouchableOpacity
-                            style={styles.audioButton}
-                            onPress={() => isPlaying ? stopAudio() : playAudio(message.audioUrl!, message.id)}
-                          >
-                            <IconSymbol
-                              ios_icon_name={isPlaying ? 'stop.fill' : 'speaker.wave.2.fill'}
-                              android_material_icon_name={isPlaying ? 'stop' : 'volume-up'}
-                              size={16}
-                              color={colors.primary}
-                            />
-                          </TouchableOpacity>
-                        )}
                       </View>
                     </>
                   )}
@@ -526,64 +250,34 @@ export default function ChatScreen() {
           </ScrollView>
 
           <View style={[styles.inputContainer, { backgroundColor: colors.card }]}>
-            {!isRecording && (
-              <TextInput
-                style={[styles.input, { color: colors.text }]}
-                placeholder="Rakstiet vai nospiediet mikrofonu, lai runātu..."
-                placeholderTextColor={colors.textSecondary}
-                value={inputText}
-                onChangeText={setInputText}
-                multiline
-                maxLength={500}
-                editable={!sending && !isRecording}
-              />
-            )}
-            {isRecording && (
-              <View style={styles.recordingIndicator}>
-                <View style={styles.recordingDot} />
-                <Text style={[styles.recordingText, { color: colors.text }]}>
-                  Ieraksta... (nospiediet, lai apturētu)
-                </Text>
-              </View>
-            )}
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Ierakstiet ziņu..."
+              placeholderTextColor={colors.textSecondary}
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              maxLength={500}
+              editable={!sending}
+            />
             
-            {hasText ? (
-              <TouchableOpacity
-                style={[
-                  styles.sendButton,
-                  {
-                    backgroundColor: !sending ? colors.primary : colors.border,
-                  },
-                ]}
-                onPress={sendMessage}
-                disabled={sending}
-              >
-                <IconSymbol
-                  ios_icon_name="arrow.up"
-                  android_material_icon_name="send"
-                  size={20}
-                  color="#FFFFFF"
-                />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[
-                  styles.micButton,
-                  {
-                    backgroundColor: isRecording ? '#EF4444' : colors.primary,
-                  },
-                ]}
-                onPress={handleMicPress}
-                disabled={sending}
-              >
-                <IconSymbol
-                  ios_icon_name={isRecording ? 'stop.fill' : 'mic.fill'}
-                  android_material_icon_name={isRecording ? 'stop' : 'mic'}
-                  size={20}
-                  color="#FFFFFF"
-                />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                {
+                  backgroundColor: hasText && !sending ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={sendMessage}
+              disabled={!hasText || sending}
+            >
+              <IconSymbol
+                ios_icon_name="arrow.up"
+                android_material_icon_name="send"
+                size={20}
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -652,10 +346,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: 'rgba(255, 255, 255, 0.8)',
   },
-  audioButton: {
-    marginLeft: 8,
-    padding: 4,
-  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -672,32 +362,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginRight: 8,
   },
-  recordingIndicator: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  recordingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#EF4444',
-    marginRight: 8,
-  },
-  recordingText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  micButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
