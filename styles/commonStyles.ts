@@ -1,7 +1,7 @@
 
 import { StyleSheet, ViewStyle, TextStyle } from 'react-native';
 
-// Purple Gradient Language Learning Theme - Inspired by modern language apps
+// Purple Gradient Language Learning Theme - Latvian Language App
 export const colors = {
   // Primary purple gradient colors
   primary: '#8B5CF6', // Vibrant purple
@@ -36,13 +36,8 @@ export const colors = {
   borderLight: '#F3F4F6',
   grey: '#9CA3AF',
   
-  // Language-specific colors (with purple tints)
-  spanish: '#F472B6', // Pink
-  french: '#A78BFA', // Purple
-  german: '#FBBF24', // Amber
-  italian: '#34D399', // Emerald
-  japanese: '#F87171', // Red
-  chinese: '#C084FC', // Purple
+  // Latvian language color
+  latvian: '#8B5CF6', // Purple for Latvian
 };
 
 export const buttonStyles = StyleSheet.create({

@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "build-me-an-ai-integ",
-    "slug": "build-me-an-ai-integ",
+    "name": "Learn Latvian Language",
+    "slug": "Learn Latvian Language",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/app-icon-enm.png",
@@ -36,7 +36,7 @@
       "expo-router",
       "expo-web-browser"
     ],
-    "scheme": "build-me-an-ai-integ",
+    "scheme": "Learn Latvian Language",
     "experiments": {
       "typedRoutes": true
     },

@@ -36,12 +36,7 @@ interface Conversation {
 }
 
 const LANGUAGES: Language[] = [
-  { code: 'es', name: 'Spanish', flag: '🇪🇸', color: colors.spanish },
-  { code: 'fr', name: 'French', flag: '🇫🇷', color: colors.french },
-  { code: 'de', name: 'German', flag: '🇩🇪', color: colors.german },
-  { code: 'it', name: 'Italian', flag: '🇮🇹', color: colors.italian },
-  { code: 'ja', name: 'Japanese', flag: '🇯🇵', color: colors.japanese },
-  { code: 'zh', name: 'Chinese', flag: '🇨🇳', color: colors.chinese },
+  { code: 'lv', name: 'Latvian', flag: '🇱🇻', color: colors.primary },
 ];
 
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
@@ -54,7 +49,6 @@ export default function HomeScreen() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewConversation, setShowNewConversation] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState<string>('');
   const [selectedLevel, setSelectedLevel] = useState<string>('');
   const [creating, setCreating] = useState(false);
   const [alertModal, setAlertModal] = useState<{ visible: boolean; title: string; message: string; onConfirm?: () => void; confirmText?: string; confirmStyle?: 'default' | 'destructive' }>({
@@ -87,22 +81,21 @@ export default function HomeScreen() {
   };
 
   const createConversation = async () => {
-    if (!selectedLanguage || !selectedLevel) {
-      setAlertModal({ visible: true, title: 'Missing Information', message: 'Please select a language and level.' });
+    if (!selectedLevel) {
+      setAlertModal({ visible: true, title: 'Missing Information', message: 'Please select a level.' });
       return;
     }
 
-    console.log('[API] Creating conversation:', selectedLanguage, selectedLevel);
+    console.log('[API] Creating conversation: Latvian,', selectedLevel);
     setCreating(true);
     try {
       const response = await authenticatedPost<{ conversationId: string }>('/api/conversations', {
-        language: selectedLanguage,
+        language: 'Latvian',
         level: selectedLevel,
       });
       console.log('[API] Created conversation:', response);
       
       setShowNewConversation(false);
-      setSelectedLanguage('');
       setSelectedLevel('');
       router.push(`/chat/${response.conversationId}`);
     } catch (error) {
@@ -163,10 +156,10 @@ export default function HomeScreen() {
       >
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.authPrompt}>
-            <Text style={styles.authIcon}>🌍</Text>
-            <Text style={styles.authTitle}>Continue French!</Text>
+            <Text style={styles.authIcon}>🇱🇻</Text>
+            <Text style={styles.authTitle}>Learn Latvian!</Text>
             <Text style={styles.authSubtitle}>
-              Practice languages with AI-powered conversations
+              Practice Latvian with AI-powered conversations
             </Text>
             <TouchableOpacity 
               style={styles.authButton}
@@ -244,9 +237,9 @@ export default function HomeScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Recent Conversations</Text>
             {conversations.map((conv, index) => {
-              const language = LANGUAGES.find(l => l.code === conv.language);
-              const languageFlag = language?.flag || '🌍';
-              const languageName = language?.name || conv.language;
+              const language = LANGUAGES.find(l => l.name === conv.language || l.code === conv.language);
+              const languageFlag = language?.flag || '🇱🇻';
+              const languageName = language?.name || 'Latvian';
               
               return (
                 <TouchableOpacity 
@@ -358,28 +351,9 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalLabel}>Select Language</Text>
-            <View style={styles.languageGrid}>
-              {LANGUAGES.map((lang) => {
-                const isSelected = selectedLanguage === lang.code;
-                return (
-                  <TouchableOpacity
-                    key={lang.code}
-                    style={[
-                      styles.languageOption,
-                      { 
-                        backgroundColor: isSelected ? lang.color + '20' : colors.background,
-                        borderColor: isSelected ? lang.color : colors.border,
-                        borderWidth: 2
-                      }
-                    ]}
-                    onPress={() => setSelectedLanguage(lang.code)}
-                  >
-                    <Text style={styles.languageFlag}>{lang.flag}</Text>
-                    <Text style={styles.languageName}>{lang.name}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+            <View style={styles.languageDisplay}>
+              <Text style={styles.languageDisplayFlag}>🇱🇻</Text>
+              <Text style={styles.languageDisplayText}>Latvian</Text>
             </View>
 
             <Text style={styles.modalLabel}>Select Level</Text>
@@ -412,11 +386,11 @@ export default function HomeScreen() {
               style={[
                 styles.createButton,
                 { 
-                  backgroundColor: selectedLanguage && selectedLevel ? colors.primary : colors.border,
+                  backgroundColor: selectedLevel ? colors.primary : colors.border,
                 }
               ]}
               onPress={createConversation}
-              disabled={!selectedLanguage || !selectedLevel || creating}
+              disabled={!selectedLevel || creating}
             >
               {creating ? (
                 <ActivityIndicator color="#FFFFFF" />
@@ -652,26 +626,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 8,
   },
-  languageGrid: {
+  languageDisplay: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -6,
-    marginBottom: 16,
-  },
-  languageOption: {
-    width: '31%',
-    margin: '1%',
-    padding: 16,
-    borderRadius: 16,
     alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    backgroundColor: colors.background,
+    borderRadius: 16,
+    marginBottom: 24,
   },
-  languageFlag: {
-    fontSize: 32,
-    marginBottom: 8,
+  languageDisplayFlag: {
+    fontSize: 48,
+    marginRight: 16,
   },
-  languageName: {
-    fontSize: 14,
-    fontWeight: '500',
+  languageDisplayText: {
+    fontSize: 28,
+    fontWeight: 'bold',
     color: colors.text,
   },
   levelContainer: {
