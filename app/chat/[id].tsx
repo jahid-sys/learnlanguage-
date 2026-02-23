@@ -24,7 +24,6 @@ import {
   useAudioPlayer, 
   useAudioRecorder, 
   AudioModule,
-  RecordingOptions,
   RecordingPresets
 } from 'expo-audio';
 
@@ -40,7 +39,6 @@ export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
-  const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -64,9 +62,6 @@ export default function ChatScreen() {
     
     return () => {
       console.log('Cleaning up audio on unmount');
-      if (recordingTimeoutRef.current) {
-        clearTimeout(recordingTimeoutRef.current);
-      }
       if (audioRecorder.isRecording) {
         audioRecorder.stop().catch(err => console.error('Error stopping recording on unmount:', err));
       }
@@ -143,6 +138,7 @@ export default function ChatScreen() {
       const permission = await AudioModule.requestRecordingPermissionsAsync();
       
       if (!permission.granted) {
+        console.log('Microphone permission denied');
         setAlertModal({ 
           visible: true, 
           title: 'Nepieciešama atļauja', 
@@ -151,15 +147,19 @@ export default function ChatScreen() {
         return;
       }
 
+      console.log('Microphone permission granted');
+
       await AudioModule.setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
       });
 
-      console.log('Starting recording');
+      console.log('Starting recording with audioRecorder.record()');
       await audioRecorder.record();
+      
+      console.log('Recording started, audioRecorder.isRecording:', audioRecorder.isRecording);
       setIsRecording(true);
-      console.log('Recording started successfully');
+      console.log('Recording state updated to true');
     } catch (error) {
       console.error('Failed to start recording:', error);
       setIsRecording(false);
@@ -172,30 +172,24 @@ export default function ChatScreen() {
   };
 
   const stopRecording = async () => {
-    console.log('Stop recording called, isRecording:', isRecording, 'audioRecorder.isRecording:', audioRecorder.isRecording);
+    console.log('Stop recording called, isRecording state:', isRecording, 'audioRecorder.isRecording:', audioRecorder.isRecording);
     
     if (!isRecording) {
-      console.log('Not recording, skipping stop');
+      console.log('Not recording according to state, skipping stop');
       return;
     }
 
-    if (!audioRecorder.isRecording) {
-      console.log('Audio recorder not recording, resetting state');
-      setIsRecording(false);
-      return;
-    }
-
-    console.log('Stopping recording');
-    
     try {
+      console.log('Attempting to stop recording');
       const uri = await audioRecorder.stop();
-      console.log('Recording stopped, URI:', uri);
+      console.log('Recording stopped successfully, URI:', uri);
       setIsRecording(false);
       
       if (uri) {
+        console.log('Valid URI received, sending voice message');
         await sendVoiceMessage(uri);
       } else {
-        console.warn('No URI returned from recording');
+        console.warn('No URI returned from recording - recording may have been too short');
         setAlertModal({
           visible: true,
           title: 'Kļūda',
@@ -214,7 +208,7 @@ export default function ChatScreen() {
   };
 
   const handleMicPress = () => {
-    console.log('Mic button pressed');
+    console.log('Mic button pressed, current isRecording:', isRecording);
     if (isRecording) {
       console.log('Stopping recording from button press');
       stopRecording();
@@ -238,39 +232,35 @@ export default function ChatScreen() {
     setMessages(prev => [...prev, tempUserMessage]);
 
     try {
-      console.log('[API] Requesting /api/conversations/' + id + '/speech-to-text...');
-
-      let transcribedText = '';
+      console.log('[API] Preparing FormData for speech-to-text');
+      const formData = new FormData();
 
       if (Platform.OS === 'web') {
+        console.log('[API] Web platform: fetching audio blob from URI');
         const audioResponse = await fetch(audioUri);
         const audioBlob = await audioResponse.blob();
-        const formData = new FormData();
+        console.log('[API] Audio blob size:', audioBlob.size, 'type:', audioBlob.type);
         formData.append('audio', audioBlob, 'recording.webm');
-
-        const sttResult = await authenticatedPostFormData<{ text: string; language: string }>(
-          `/api/conversations/${id}/speech-to-text`,
-          formData
-        );
-        console.log('[API] Speech-to-text result:', sttResult);
-        transcribedText = sttResult.text;
       } else {
-        const formData = new FormData();
+        console.log('[API] Native platform: appending audio file');
         formData.append('audio', {
           uri: audioUri,
           type: 'audio/m4a',
           name: 'recording.m4a',
         } as any);
-
-        const sttResult = await authenticatedPostFormData<{ text: string; language: string }>(
-          `/api/conversations/${id}/speech-to-text`,
-          formData
-        );
-        console.log('[API] Speech-to-text result:', sttResult);
-        transcribedText = sttResult.text;
       }
 
+      console.log('[API] Requesting /api/conversations/' + id + '/speech-to-text...');
+      const sttResult = await authenticatedPostFormData<{ text: string; language: string }>(
+        `/api/conversations/${id}/speech-to-text`,
+        formData
+      );
+      console.log('[API] Speech-to-text result:', sttResult);
+      
+      const transcribedText = sttResult.text;
+
       if (!transcribedText || transcribedText.trim() === '') {
+        console.warn('[API] Empty transcription received');
         setMessages(prev => prev.filter(m => m.id !== tempId));
         setAlertModal({
           visible: true,
@@ -280,6 +270,7 @@ export default function ChatScreen() {
         return;
       }
 
+      console.log('[API] Transcription successful:', transcribedText);
       setMessages(prev =>
         prev.map(m =>
           m.id === tempId ? { ...m, content: transcribedText } : m
@@ -304,6 +295,7 @@ export default function ChatScreen() {
       setMessages(prev => [...prev, aiResponse]);
 
       if (response.audioUrl) {
+        console.log('[API] Playing AI audio response');
         await playAudio(response.audioUrl, response.messageId);
       }
 
