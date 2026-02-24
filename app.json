@@ -1,7 +1,8 @@
+
 {
   "expo": {
     "name": "Learn Latvian Language",
-    "slug": "Learn Latvian Language",
+    "slug": "Learn-Latvian-Language",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/app-icon-qec.png",
@@ -36,13 +37,13 @@
       "expo-router",
       "expo-web-browser"
     ],
-    "scheme": "LearnLatvianLanguage",
+    "scheme": "learnlatvianlanguage",
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
       "router": {},
-      "backendUrl": "https://4pxqjtfq33n3vds9fv4h7u2t4zv8a2w7.app.specular.dev"
+      "backendUrl": "https://zpy97uwwx3c8fxwhj6e7j563e3uqs3fr.app.specular.dev"
     }
   }
 }
