@@ -12,7 +12,7 @@ export const app = await createApplication(schema);
 // Export App type for use in route files
 export type App = typeof app;
 
-// Enable authentication
+// Enable authentication with email/password and OAuth providers (Google and Apple via proxy)
 app.withAuth();
 
 // Enable storage for audio files
