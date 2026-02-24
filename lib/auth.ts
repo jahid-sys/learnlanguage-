@@ -55,10 +55,13 @@ const authClientOptions: any = {
 };
 
 // On native, use expoClient plugin for proper token handling
+// The scheme must match the one in app.json (expo.scheme)
+// Note: In Expo Go, deep links use exp:// scheme automatically
+// For standalone builds, the scheme from app.json is used
 if (Platform.OS !== "web") {
   authClientOptions.plugins = [
     expoClient({
-      scheme: "build-me-an-ai-integ",
+      scheme: "learn-latvian-language",
       storagePrefix: "lingualearn",
       storage: storage as any,
     }),

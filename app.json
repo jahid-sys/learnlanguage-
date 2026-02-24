@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Learn Latvian Language",
-    "slug": "Learn-Latvian-Language",
+    "slug": "Learn Latvian Language",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/app-icon-qec.png",
@@ -36,7 +36,7 @@
       "expo-router",
       "expo-web-browser"
     ],
-    "scheme": "learnlatvianlanguage",
+    "scheme": "Learn Latvian Language",
     "experiments": {
       "typedRoutes": true
     },

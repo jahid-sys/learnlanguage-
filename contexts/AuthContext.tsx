@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import { authClient, setBearerToken, clearAuthTokens, BEARER_TOKEN_KEY, API_URL } from "@/lib/auth";
@@ -107,16 +107,74 @@ async function directAuthCall(endpoint: string, body: Record<string, any>): Prom
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  // Ref to hold the OAuth resolve/reject callbacks so the deep link handler can resolve the pending OAuth promise
+  const oauthResolveRef = useRef<((token: string) => void) | null>(null);
+  const oauthRejectRef = useRef<((err: Error) => void) | null>(null);
 
   useEffect(() => {
     console.log("[AuthContext] Initializing, fetching user session...");
     fetchUser();
 
-    // Listen for deep links (e.g. from social auth redirects)
-    const subscription = Linking.addEventListener("url", (event) => {
+    // Listen for deep links (e.g. from social auth redirects on native)
+    const subscription = Linking.addEventListener("url", async (event) => {
       console.log("[AuthContext] Deep link received:", event.url);
-      console.log("[AuthContext] Refreshing user session after deep link");
-      fetchUser();
+
+      // Check if this is an OAuth callback with a token
+      try {
+        // Handle both standard URL format and custom scheme URLs
+        let token: string | null = null;
+        let error: string | null = null;
+
+        try {
+          const url = new URL(event.url);
+          token = url.searchParams.get("better_auth_token");
+          error = url.searchParams.get("error");
+        } catch {
+          // For custom scheme URLs like "myapp://auth-callback?better_auth_token=xxx"
+          // Try to parse query string manually
+          const queryStart = event.url.indexOf("?");
+          if (queryStart !== -1) {
+            const queryString = event.url.substring(queryStart + 1);
+            const params = new URLSearchParams(queryString);
+            token = params.get("better_auth_token");
+            error = params.get("error");
+          }
+        }
+
+        if (error) {
+          console.error("[AuthContext] OAuth error in deep link:", error);
+          if (oauthRejectRef.current) {
+            oauthRejectRef.current(new Error(error));
+            oauthResolveRef.current = null;
+            oauthRejectRef.current = null;
+          }
+          return;
+        }
+
+        if (token) {
+          console.log("[AuthContext] Token found in OAuth callback deep link, storing...");
+          await setBearerToken(token);
+
+          // Resolve the pending OAuth promise if one exists
+          if (oauthResolveRef.current) {
+            oauthResolveRef.current(token);
+            oauthResolveRef.current = null;
+            oauthRejectRef.current = null;
+          }
+
+          // Wait a moment for the token to be stored
+          await new Promise(resolve => setTimeout(resolve, 300));
+          console.log("[AuthContext] Refreshing user session after OAuth token received");
+          await fetchUser();
+          return;
+        }
+      } catch (err) {
+        console.log("[AuthContext] Deep link parsing error:", err);
+      }
+
+      // No token in URL, just refresh session (Better Auth Expo client may have handled it)
+      console.log("[AuthContext] Refreshing user session after deep link (no token in URL)");
+      await fetchUser();
     });
 
     // POLLING: Refresh session every 5 minutes to keep SecureStore token in sync
@@ -135,26 +193,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log("[AuthContext] Fetching user session from Better Auth...");
       setLoading(true);
-      
-      // First try to get session via the auth client
-      const session = await authClient.getSession();
-      console.log("[AuthContext] Session response:", JSON.stringify(session));
-      
-      if (session?.data?.user) {
-        console.log("[AuthContext] User found via client:", session.data.user);
-        setUser(session.data.user as User);
-        
-        // Sync token to storage for utils/api.ts
-        if (session.data.session?.token) {
-          console.log("[AuthContext] Syncing bearer token to storage");
-          await setBearerToken(session.data.session.token);
-        } else {
-          console.warn("[AuthContext] Session exists but no token found in session data");
-        }
-        return;
-      }
-      
-      // Fallback: try to get session using stored bearer token
+
+      // Get stored bearer token first
       let storedToken: string | null = null;
       if (Platform.OS === "web") {
         try {
@@ -165,9 +205,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           storedToken = await SecureStore.getItemAsync(BEARER_TOKEN_KEY);
         } catch {}
       }
-      
+
+      // On native, prefer the /api/auth/session/from-token endpoint with Bearer token
+      // This is the new endpoint that properly handles native OAuth sessions
+      if (storedToken && Platform.OS !== "web") {
+        console.log("[AuthContext] Native: trying /api/auth/session/from-token with stored bearer token...");
+        try {
+          const sessionResponse = await fetch(`${API_URL}/api/auth/session/from-token`, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${storedToken}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (sessionResponse.ok) {
+            const sessionData = await sessionResponse.json();
+            console.log("[AuthContext] Session from /session/from-token:", JSON.stringify(sessionData));
+            if (sessionData?.user) {
+              setUser(sessionData.user as User);
+              // Keep the token stored since it's valid
+              return;
+            }
+          } else {
+            console.log("[AuthContext] /session/from-token failed:", sessionResponse.status);
+            if (sessionResponse.status === 401) {
+              // Token is invalid/expired, clear it
+              await clearAuthTokens();
+              storedToken = null;
+            }
+          }
+        } catch (err) {
+          console.error("[AuthContext] /session/from-token error:", err);
+        }
+      }
+
+      // Try to get session via the auth client (works for web cookie-based sessions and native)
+      try {
+        const session = await authClient.getSession();
+        console.log("[AuthContext] Session response:", JSON.stringify(session));
+
+        if (session?.data?.user) {
+          console.log("[AuthContext] User found via client:", session.data.user);
+          setUser(session.data.user as User);
+
+          // Sync token to storage for utils/api.ts
+          if (session.data.session?.token) {
+            console.log("[AuthContext] Syncing bearer token to storage");
+            await setBearerToken(session.data.session.token);
+          } else {
+            console.warn("[AuthContext] Session exists but no token found in session data");
+          }
+          return;
+        }
+      } catch (clientErr) {
+        console.error("[AuthContext] authClient.getSession error:", clientErr);
+      }
+
+      // Fallback: try /api/auth/get-session with stored bearer token (legacy endpoint)
       if (storedToken) {
-        console.log("[AuthContext] Trying to fetch session with stored bearer token...");
+        console.log("[AuthContext] Trying fallback /api/auth/get-session with stored bearer token...");
         try {
           const sessionResponse = await fetch(`${API_URL}/api/auth/get-session`, {
             method: "GET",
@@ -176,27 +273,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               "Content-Type": "application/json",
             },
           });
-          
+
           if (sessionResponse.ok) {
             const sessionData = await sessionResponse.json();
-            console.log("[AuthContext] Session from bearer token:", JSON.stringify(sessionData));
+            console.log("[AuthContext] Session from /get-session:", JSON.stringify(sessionData));
             if (sessionData?.user) {
               setUser(sessionData.user as User);
               return;
             }
           } else {
-            console.log("[AuthContext] Bearer token session fetch failed:", sessionResponse.status);
+            console.log("[AuthContext] /get-session failed:", sessionResponse.status);
             // Token is invalid, clear it
             await clearAuthTokens();
           }
         } catch (err) {
-          console.error("[AuthContext] Bearer token session fetch error:", err);
+          console.error("[AuthContext] /get-session error:", err);
         }
       }
-      
+
       console.log("[AuthContext] No user session found");
       setUser(null);
-      await clearAuthTokens();
     } catch (error) {
       console.error("[AuthContext] Failed to fetch user:", error);
       setUser(null);
@@ -279,16 +375,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await fetchUser();
       } else {
         console.log("[AuthContext] Native platform: using deep link flow");
-        const callbackURL = Linking.createURL("/");
+
+        // Create a promise that will be resolved when the deep link callback arrives with a token
+        const tokenPromise = new Promise<string | null>((resolve, reject) => {
+          // Store resolve/reject so the deep link listener can call them
+          oauthResolveRef.current = resolve;
+          oauthRejectRef.current = reject;
+
+          // Timeout after 120 seconds if no callback received
+          setTimeout(() => {
+            if (oauthResolveRef.current === resolve) {
+              console.log("[AuthContext] OAuth callback timeout - will try fetching session anyway");
+              oauthResolveRef.current = null;
+              oauthRejectRef.current = null;
+              resolve(null); // Resolve with null to trigger session fetch fallback
+            }
+          }, 120000);
+        });
+
+        // Use the app scheme from app.json for the callback URL
+        // The scheme must match what's configured in app.json
+        const callbackURL = Linking.createURL("/auth-callback");
         console.log("[AuthContext] Callback URL:", callbackURL);
+
+        // Initiate the OAuth flow - this opens the browser
         await authClient.signIn.social({
           provider,
           callbackURL,
         });
-        console.log("[AuthContext] OAuth redirect initiated");
-        await fetchUser();
+        console.log("[AuthContext] OAuth browser opened, waiting for callback...");
+
+        // Wait for the deep link callback to arrive with the token
+        const token = await tokenPromise;
+
+        if (token) {
+          console.log("[AuthContext] OAuth token received via deep link, fetching user...");
+          // Token already stored by the deep link handler, just fetch user
+          await fetchUser();
+        } else {
+          // No token from deep link - try fetching session anyway
+          // (Better Auth Expo client may have handled it internally)
+          console.log("[AuthContext] No token from deep link, attempting session fetch...");
+          await fetchUser();
+          console.log("[AuthContext] Session fetch complete after OAuth");
+        }
       }
     } catch (error) {
+      // Clean up the pending OAuth promise refs on error
+      oauthResolveRef.current = null;
+      oauthRejectRef.current = null;
       console.error(`[AuthContext] ${provider} sign in failed:`, error);
       throw error;
     }
