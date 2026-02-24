@@ -1,11 +1,11 @@
 import "react-native-reanimated";
 import React, { useEffect, useState } from "react";
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { SystemBars } from "react-native-edge-to-edge";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { useColorScheme, View, Text, TouchableOpacity, Modal, Pressable, StyleSheet } from "react-native";
+import { useColorScheme, View, Text, TouchableOpacity, Modal, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useNetworkState } from "expo-network";
 import {
   DarkTheme,
@@ -15,7 +15,7 @@ import {
 } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { WidgetProvider } from "@/contexts/WidgetContext";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 // Note: Error logging is auto-initialized via index.ts import
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.

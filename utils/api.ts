@@ -166,8 +166,11 @@ export const authenticatedApiCall = async <T = any>(
   const token = await getBearerToken();
 
   if (!token) {
+    console.error("[API] No bearer token found for authenticated request to:", endpoint);
     throw new Error("Authentication token not found. Please sign in.");
   }
+
+  console.log("[API] Using bearer token for authenticated request to:", endpoint);
 
   return apiCall<T>(endpoint, {
     ...options,

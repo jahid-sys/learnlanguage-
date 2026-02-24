@@ -11,46 +11,90 @@ export const BEARER_TOKEN_KEY = "lingualearn_bearer_token";
 // Platform-specific storage: localStorage for web, SecureStore for native
 const storage = Platform.OS === "web"
   ? {
-      getItem: (key: string) => localStorage.getItem(key),
-      setItem: (key: string, value: string) => localStorage.setItem(key, value),
-      deleteItem: (key: string) => localStorage.removeItem(key),
+      getItem: (key: string) => {
+        try {
+          return localStorage.getItem(key);
+        } catch {
+          return null;
+        }
+      },
+      setItem: (key: string, value: string) => {
+        try {
+          localStorage.setItem(key, value);
+        } catch {}
+      },
+      deleteItem: (key: string) => {
+        try {
+          localStorage.removeItem(key);
+        } catch {}
+      },
     }
-  : SecureStore;
+  : {
+      getItem: async (key: string) => {
+        try {
+          return await SecureStore.getItemAsync(key);
+        } catch {
+          return null;
+        }
+      },
+      setItem: async (key: string, value: string) => {
+        try {
+          await SecureStore.setItemAsync(key, value);
+        } catch {}
+      },
+      deleteItem: async (key: string) => {
+        try {
+          await SecureStore.deleteItemAsync(key);
+        } catch {}
+      },
+    };
 
-export const authClient = createAuthClient({
+// Build auth client options
+const authClientOptions: any = {
   baseURL: API_URL,
-  plugins: [
+};
+
+// On native, use expoClient plugin for proper token handling
+if (Platform.OS !== "web") {
+  authClientOptions.plugins = [
     expoClient({
       scheme: "build-me-an-ai-integ",
       storagePrefix: "lingualearn",
-      storage,
+      storage: storage as any,
     }),
-  ],
-  // On web, use cookies (credentials: include) and fallback to bearer token
-  ...(Platform.OS === "web" && {
-    fetchOptions: {
-      credentials: "include",
-      auth: {
-        type: "Bearer" as const,
-        token: () => localStorage.getItem(BEARER_TOKEN_KEY) || "",
-      },
-    },
-  }),
-});
+  ];
+}
+
+// On web, use credentials: include for cookie-based auth + bearer token fallback
+if (Platform.OS === "web") {
+  authClientOptions.fetchOptions = {
+    credentials: "include" as RequestCredentials,
+  };
+}
+
+export const authClient = createAuthClient(authClientOptions);
 
 export async function setBearerToken(token: string) {
-  if (Platform.OS === "web") {
-    localStorage.setItem(BEARER_TOKEN_KEY, token);
-  } else {
-    await SecureStore.setItemAsync(BEARER_TOKEN_KEY, token);
+  try {
+    if (Platform.OS === "web") {
+      localStorage.setItem(BEARER_TOKEN_KEY, token);
+    } else {
+      await SecureStore.setItemAsync(BEARER_TOKEN_KEY, token);
+    }
+  } catch (error) {
+    console.error("[Auth] Failed to set bearer token:", error);
   }
 }
 
 export async function clearAuthTokens() {
-  if (Platform.OS === "web") {
-    localStorage.removeItem(BEARER_TOKEN_KEY);
-  } else {
-    await SecureStore.deleteItemAsync(BEARER_TOKEN_KEY);
+  try {
+    if (Platform.OS === "web") {
+      localStorage.removeItem(BEARER_TOKEN_KEY);
+    } else {
+      await SecureStore.deleteItemAsync(BEARER_TOKEN_KEY);
+    }
+  } catch (error) {
+    console.error("[Auth] Failed to clear auth tokens:", error);
   }
 }
 
