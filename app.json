@@ -36,13 +36,13 @@
       "expo-router",
       "expo-web-browser"
     ],
-    "scheme": "Learn Latvian Language",
+    "scheme": "LearnLatvianLanguage",
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
       "router": {},
-      "backendUrl": "https://zpy97uwwx3c8fxwhj6e7j563e3uqs3fr.app.specular.dev"
+      "backendUrl": "https://4pxqjtfq33n3vds9fv4h7u2t4zv8a2w7.app.specular.dev"
     }
   }
 }
