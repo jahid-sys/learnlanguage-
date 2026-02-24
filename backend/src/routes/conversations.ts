@@ -451,24 +451,32 @@ export function registerConversationRoutes(app: App) {
             return reply.status(413).send({ error: 'File size limit exceeded' });
           }
 
-          const { text: transcribedText } = await generateText({
-            model: gateway('google/gemini-3-flash'),
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: 'Transcribe this audio and respond with only the transcribed text.' },
-                  {
-                    type: 'file',
-                    mediaType: audioFile.mimetype,
-                    data: audioBuffer,
-                  },
-                ],
-              },
-            ],
-          });
+          // Add timeout to AI call to prevent hanging
+          const aiTimeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('AI transcription timeout')), 8000)
+          );
 
-          userMessageText = transcribedText.trim();
+          const result = await Promise.race([
+            generateText({
+              model: gateway('google/gemini-3-flash'),
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: 'Transcribe this audio and respond with only the transcribed text.' },
+                    {
+                      type: 'file',
+                      mediaType: audioFile.mimetype,
+                      data: audioBuffer,
+                    },
+                  ],
+                },
+              ],
+            }),
+            aiTimeoutPromise,
+          ]);
+
+          userMessageText = result.text.trim();
           app.logger.info({ conversationId: id }, 'Audio transcribed successfully');
         } catch (error) {
           app.logger.error({ err: error, conversationId: id }, 'Failed to transcribe audio');
@@ -514,12 +522,20 @@ Always respond in ${conversation.language} when the student uses ${conversation.
         // Call AI with conversation history
         let aiResponse: string;
         try {
-          const { text: generatedResponse } = await generateText({
-            model: gateway('google/gemini-2.5-flash'),
-            system: systemPrompt,
-            messages: conversationHistory,
-          });
-          aiResponse = generatedResponse;
+          // Add timeout to AI call to prevent hanging
+          const aiTimeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('AI response timeout')), 8000)
+          );
+
+          const result = await Promise.race([
+            generateText({
+              model: gateway('google/gemini-2.5-flash'),
+              system: systemPrompt,
+              messages: conversationHistory,
+            }),
+            aiTimeoutPromise,
+          ]);
+          aiResponse = result.text;
         } catch (aiError) {
           // Fallback to mock response if AI call fails or times out
           app.logger.warn({ err: aiError, conversationId: id }, 'AI call failed, using mock response');

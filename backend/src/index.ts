@@ -16,55 +16,81 @@ export type App = typeof app;
 // Custom middleware to handle native mobile OAuth callbacks
 // This intercepts OAuth callbacks and returns session token in redirect URL for native clients
 const nativeOAuthHook = createAuthMiddleware(async (ctx) => {
-  // Check if this is an OAuth callback request
-  if (!ctx.path.includes('callback') && !ctx.path.includes('sign-in/social')) {
+  // Check if this is an OAuth callback request or sign-in request
+  const isOAuthFlow = ctx.path.includes('callback') || ctx.path.includes('sign-in/social');
+  if (!isOAuthFlow) {
     return;
   }
 
-  // If the request includes a redirect_uri from a native app, we'll handle it specially
+  // Check for native client indicators in query parameters
   const query = ctx.query as Record<string, unknown>;
-  const redirectUri = query?.redirect_uri as string;
-  const isNativeClient = redirectUri && (
-    redirectUri.startsWith('exp://') ||  // Expo
-    redirectUri.startsWith('myapp://') ||  // Custom native scheme
-    redirectUri.startsWith('rnapp://') ||  // React Native
-    query?.client_type === 'native'
-  );
+  const redirectTo = query?.redirect_to as string;
+  const expoClient = query?.expo_client === 'true' || query?.expo_client === true;
 
-  // Store native client indicator in context for the response handler
+  // Detect if it's a native app by checking redirect_to or expo_client flag
+  const isNativeClient = expoClient || (redirectTo && (
+    redirectTo.startsWith('exp://') ||      // Expo
+    redirectTo.startsWith('myapp://') ||    // Custom native scheme
+    redirectTo.startsWith('rnapp://') ||    // React Native
+    redirectTo.startsWith('rnexpo://')      // React Native Expo
+  ));
+
+  // Store native client indicator and redirect info in context for response handler
   if (isNativeClient) {
     ctx.context = {
       ...ctx.context,
       isNativeClient: true,
-      nativeRedirectUri: redirectUri,
+      nativeRedirectTo: redirectTo || 'exp://auth-callback',
     };
+    app.logger.info(
+      { redirectTo, expoClient, nativeRedirectTo: redirectTo || 'exp://auth-callback' },
+      'Detected native mobile client in OAuth flow'
+    );
   }
 });
 
 // Hook to modify OAuth callback response for native clients
 const nativeOAuthResponseHook = createAuthMiddleware(async (ctx) => {
-  // Only modify successful OAuth responses
+  // Only modify successful OAuth responses for native clients
   const isNativeClient = (ctx.context as Record<string, unknown>)?.isNativeClient;
-  const newSession = ctx.context?.newSession;
+  const nativeRedirectTo = (ctx.context as Record<string, unknown>)?.nativeRedirectTo as string;
 
-  if (!newSession || !isNativeClient) {
+  if (!isNativeClient || !nativeRedirectTo) {
     return;
   }
 
-  // For native clients, redirect to the app scheme with session token as query parameter
-  const sessionData = newSession as { session: { token: string }; user: { id: string } };
-  const sessionToken = sessionData.session?.token;
-  const userId = sessionData.user?.id;
+  // Try to get session data from context
+  const newSession = ctx.context?.newSession;
+  let sessionToken: string | null = null;
+
+  if (newSession) {
+    const sessionData = newSession as Record<string, unknown>;
+    // Handle different session response structures
+    if (typeof sessionData.session === 'object' && sessionData.session !== null) {
+      sessionToken = (sessionData.session as Record<string, unknown>)?.token as string;
+    } else if (typeof sessionData.token === 'string') {
+      sessionToken = sessionData.token;
+    }
+  }
 
   if (!sessionToken) {
+    app.logger.warn({ nativeRedirectTo }, 'No session token available for native redirect');
     return;
   }
 
-  const redirectUri = (ctx.context as Record<string, unknown>)?.nativeRedirectUri || 'myapp://oauth-callback';
+  // Append session token to the native app redirect URL
+  const callbackUrl = new URL(nativeRedirectTo);
+  callbackUrl.searchParams.set('better_auth_token', sessionToken);
 
-  const callbackUrl = new URL(redirectUri as string);
-  callbackUrl.searchParams.set('token', sessionToken);
-  callbackUrl.searchParams.set('userId', userId || '');
+  const finalRedirectUrl = callbackUrl.toString();
+  app.logger.info(
+    {
+      tokenLength: sessionToken.length,
+      redirectUrl: finalRedirectUrl,
+      originalRedirect: nativeRedirectTo
+    },
+    'Redirecting native client with session token'
+  );
 
   // Return redirect response with the modified URL
   return {
@@ -73,7 +99,7 @@ const nativeOAuthResponseHook = createAuthMiddleware(async (ctx) => {
       response: {
         statusCode: 302,
         headers: {
-          Location: callbackUrl.toString(),
+          Location: finalRedirectUrl,
         },
       },
     },

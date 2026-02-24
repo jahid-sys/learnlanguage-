@@ -186,10 +186,65 @@ export function registerVocabularyRoutes(app: App) {
   ]
 }`;
 
-        const { text: aiResponse } = await generateText({
-          model: gateway('google/gemini-3-flash'),
-          prompt,
-        });
+        // Add timeout to AI call to prevent hanging
+        const aiTimeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('AI response timeout')), 8000)
+        );
+
+        let aiResponse: string;
+        try {
+          const result = await Promise.race([
+            generateText({
+              model: gateway('google/gemini-3-flash'),
+              prompt,
+            }),
+            aiTimeoutPromise,
+          ]);
+          aiResponse = result.text;
+        } catch (timeoutError) {
+          app.logger.warn({ userId, error: String(timeoutError) }, 'AI generation timed out, returning default');
+          // Return default daily vocabulary if AI times out
+          return {
+            topic: 'Daily Practice',
+            words: [
+              {
+                id: 'default-1',
+                latvianWord: 'sveiki',
+                englishTranslation: 'hello',
+                context: 'Sveiki, kā jums klājas?',
+                date: todayString,
+              },
+              {
+                id: 'default-2',
+                latvianWord: 'paldies',
+                englishTranslation: 'thank you',
+                context: 'Paldies par jūsu palīdzību.',
+                date: todayString,
+              },
+              {
+                id: 'default-3',
+                latvianWord: 'lūdzu',
+                englishTranslation: 'please',
+                context: 'Lūdzu, palīdziet man.',
+                date: todayString,
+              },
+              {
+                id: 'default-4',
+                latvianWord: 'jā',
+                englishTranslation: 'yes',
+                context: 'Jā, es piekrītu.',
+                date: todayString,
+              },
+              {
+                id: 'default-5',
+                latvianWord: 'nē',
+                englishTranslation: 'no',
+                context: 'Nē, es nepiekrītu.',
+                date: todayString,
+              },
+            ],
+          };
+        }
 
         app.logger.info({ userId, responseLength: aiResponse.length }, 'AI generated daily vocabulary');
 
