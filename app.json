@@ -1,4 +1,3 @@
-
 {
   "expo": {
     "name": "Learn Latvian Language",
@@ -43,7 +42,7 @@
     },
     "extra": {
       "router": {},
-      "backendUrl": "https://zpy97uwwx3c8fxwhj6e7j563e3uqs3fr.app.specular.dev"
+      "backendUrl": "https://mpakjbm34wtscsy5gackv4s9qykgzes2.app.specular.dev"
     }
   }
 }
