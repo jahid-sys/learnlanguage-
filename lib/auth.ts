@@ -59,9 +59,19 @@ const authClientOptions: any = {
 // Note: In Expo Go, deep links use exp:// scheme automatically
 // For standalone builds, the scheme from app.json is used
 if (Platform.OS !== "web") {
+  // Get the scheme from Constants - normalize it to be URL-safe (no spaces)
+  // In Expo Go, the actual deep link scheme is "exp://" regardless of app scheme
+  // For standalone builds, we use the normalized scheme
+  const rawScheme = Constants.expoConfig?.scheme;
+  // Normalize: lowercase, replace spaces with hyphens, remove invalid chars
+  const appScheme = typeof rawScheme === "string"
+    ? rawScheme.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\-._]/g, "")
+    : "learn-latvian-language";
+  console.log("[Auth] Raw scheme:", rawScheme, "-> Normalized scheme:", appScheme);
+  
   authClientOptions.plugins = [
     expoClient({
-      scheme: "learn-latvian-language",
+      scheme: appScheme,
       storagePrefix: "lingualearn",
       storage: storage as any,
     }),

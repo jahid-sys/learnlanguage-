@@ -125,19 +125,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let token: string | null = null;
         let error: string | null = null;
 
+        // Parse the URL - handle both exp:// and custom scheme formats
+        const urlString = event.url;
+        console.log("[AuthContext] Parsing URL:", urlString);
+
+        // Strategy 1: Standard URL parsing
         try {
-          const url = new URL(event.url);
+          const url = new URL(urlString);
           token = url.searchParams.get("better_auth_token");
           error = url.searchParams.get("error");
-        } catch {
-          // For custom scheme URLs like "myapp://auth-callback?better_auth_token=xxx"
-          // Try to parse query string manually
-          const queryStart = event.url.indexOf("?");
+          console.log("[AuthContext] URL parsing strategy 1 - token:", token ? "found" : "not found");
+        } catch (e1) {
+          console.log("[AuthContext] URL parsing strategy 1 failed, trying strategy 2");
+        }
+
+        // Strategy 2: Manual query string parsing (handles exp:// and custom schemes)
+        if (!token && !error) {
+          const queryStart = urlString.indexOf("?");
           if (queryStart !== -1) {
-            const queryString = event.url.substring(queryStart + 1);
-            const params = new URLSearchParams(queryString);
-            token = params.get("better_auth_token");
-            error = params.get("error");
+            const queryString = urlString.substring(queryStart + 1);
+            console.log("[AuthContext] Query string:", queryString);
+            try {
+              const params = new URLSearchParams(queryString);
+              token = params.get("better_auth_token");
+              error = params.get("error");
+              console.log("[AuthContext] URL parsing strategy 2 - token:", token ? "found" : "not found");
+            } catch (e2) {
+              console.log("[AuthContext] Strategy 2 URLSearchParams failed:", e2);
+            }
+          }
+        }
+
+        // Strategy 3: Regex fallback (handles URL-encoded params)
+        if (!token && !error) {
+          const tokenMatch = urlString.match(/[?&]better_auth_token=([^&\s]+)/);
+          const errorMatch = urlString.match(/[?&]error=([^&\s]+)/);
+          if (tokenMatch) {
+            token = decodeURIComponent(tokenMatch[1]);
+            console.log("[AuthContext] URL parsing strategy 3 - token found via regex");
+          }
+          if (errorMatch) {
+            error = decodeURIComponent(errorMatch[1]);
           }
         }
 
@@ -152,14 +180,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (token) {
-          console.log("[AuthContext] Token found in OAuth callback deep link, storing...");
+          console.log("[AuthContext] Token found in OAuth callback deep link! Storing...");
           await setBearerToken(token);
 
           // Resolve the pending OAuth promise if one exists
           if (oauthResolveRef.current) {
+            console.log("[AuthContext] Resolving pending OAuth promise");
             oauthResolveRef.current(token);
             oauthResolveRef.current = null;
             oauthRejectRef.current = null;
+          } else {
+            console.log("[AuthContext] No pending OAuth promise (user may have navigated away)");
           }
 
           // Wait a moment for the token to be stored
@@ -167,9 +198,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log("[AuthContext] Refreshing user session after OAuth token received");
           await fetchUser();
           return;
+        } else {
+          console.log("[AuthContext] No token found in deep link URL");
         }
       } catch (err) {
-        console.log("[AuthContext] Deep link parsing error:", err);
+        console.error("[AuthContext] Deep link parsing error:", err);
       }
 
       // No token in URL, just refresh session (Better Auth Expo client may have handled it)
@@ -385,7 +418,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Timeout after 120 seconds if no callback received
           setTimeout(() => {
             if (oauthResolveRef.current === resolve) {
-              console.log("[AuthContext] OAuth callback timeout - will try fetching session anyway");
+              console.log("[AuthContext] OAuth callback timeout (120s) - will try fetching session anyway");
               oauthResolveRef.current = null;
               oauthRejectRef.current = null;
               resolve(null); // Resolve with null to trigger session fetch fallback
@@ -393,31 +426,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }, 120000);
         });
 
-        // Use the app scheme from app.json for the callback URL
-        // The scheme must match what's configured in app.json
+        // Build the callback URL for the OAuth redirect
+        // Linking.createURL generates the correct URL for both Expo Go (exp://) and standalone builds
         const callbackURL = Linking.createURL("/auth-callback");
         console.log("[AuthContext] Callback URL:", callbackURL);
+        console.log("[AuthContext] Linking base URL:", Linking.createURL(""));
 
         // Initiate the OAuth flow - this opens the browser
-        await authClient.signIn.social({
-          provider,
-          callbackURL,
-        });
-        console.log("[AuthContext] OAuth browser opened, waiting for callback...");
+        // The expoClient plugin in lib/auth.ts handles appending expo_client=true
+        // and the scheme to the OAuth request so the backend knows to redirect back
+        try {
+          const result = await authClient.signIn.social({
+            provider,
+            callbackURL,
+          });
+          console.log("[AuthContext] authClient.signIn.social result:", JSON.stringify(result));
+          console.log("[AuthContext] OAuth browser opened, waiting for callback...");
+        } catch (browserError) {
+          console.error("[AuthContext] Failed to open OAuth browser:", browserError);
+          // Clean up the promise refs
+          oauthResolveRef.current = null;
+          oauthRejectRef.current = null;
+          throw new Error("Failed to open authentication browser. Please try again.");
+        }
 
         // Wait for the deep link callback to arrive with the token
         const token = await tokenPromise;
 
         if (token) {
-          console.log("[AuthContext] OAuth token received via deep link, fetching user...");
+          console.log("[AuthContext] OAuth token received via deep link! Fetching user...");
           // Token already stored by the deep link handler, just fetch user
           await fetchUser();
+          console.log("[AuthContext] User fetch complete after OAuth success");
         } else {
           // No token from deep link - try fetching session anyway
-          // (Better Auth Expo client may have handled it internally)
-          console.log("[AuthContext] No token from deep link, attempting session fetch...");
+          // The user may have completed OAuth but the deep link didn't fire properly
+          console.log("[AuthContext] No token from deep link promise, attempting session fetch as fallback...");
+          
+          // Wait a bit for any pending token storage to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
           await fetchUser();
-          console.log("[AuthContext] Session fetch complete after OAuth");
+          
+          // Check if we got a user
+          if (!user) {
+            console.warn("[AuthContext] Session fetch after OAuth returned no user - OAuth may have failed");
+            throw new Error("Authentication completed but no user session found. Please try again.");
+          }
+          
+          console.log("[AuthContext] Session fetch complete after OAuth (fallback path)");
         }
       }
     } catch (error) {
