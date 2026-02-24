@@ -158,6 +158,22 @@ describe("API Integration Tests", () => {
       await expectStatus(res, 404);
     });
 
+    // CREATE: Invalid conversation UUID format
+    test("Send message with invalid conversation UUID format returns 400", async () => {
+      const res = await authenticatedApi(
+        "/api/conversations/invalid-uuid/messages",
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "Test message",
+          }),
+        }
+      );
+      await expectStatus(res, 400);
+    });
+
     // READ: GET /api/conversations/{id}/messages
     test("Get messages from conversation", async () => {
       const res = await authenticatedApi(
@@ -191,6 +207,15 @@ describe("API Integration Tests", () => {
         authToken
       );
       await expectStatus(res, 404);
+    });
+
+    // READ: Invalid conversation UUID format
+    test("Get messages with invalid conversation UUID format returns 400", async () => {
+      const res = await authenticatedApi(
+        "/api/conversations/invalid-uuid/messages",
+        authToken
+      );
+      await expectStatus(res, 400);
     });
   });
 
@@ -256,6 +281,18 @@ describe("API Integration Tests", () => {
         }
       );
       await expectStatus(res, 404);
+    });
+
+    // DELETE: Invalid conversation UUID format
+    test("Delete conversation with invalid UUID format returns 400", async () => {
+      const res = await authenticatedApi(
+        "/api/conversations/invalid-uuid",
+        authToken,
+        {
+          method: "DELETE",
+        }
+      );
+      await expectStatus(res, 400);
     });
   });
 
@@ -335,6 +372,21 @@ describe("API Integration Tests", () => {
         }
       );
       await expectStatus(res, 404);
+    });
+
+    // POST: Invalid conversation UUID format
+    test("Transcribe with invalid conversation UUID format returns 400", async () => {
+      const form = new FormData();
+      form.append("file", createTestFile("audio.wav", "audio data", "audio/wav"));
+      const res = await authenticatedApi(
+        "/api/conversations/invalid-uuid/speech-to-text",
+        authToken,
+        {
+          method: "POST",
+          body: form,
+        }
+      );
+      await expectStatus(res, 400);
     });
   });
 
@@ -460,6 +512,23 @@ describe("API Integration Tests", () => {
       );
       await expectStatus(res, 404);
     });
+
+    // POST: Invalid conversation UUID format
+    test("Generate audio with invalid conversation UUID format returns 400", async () => {
+      const res = await authenticatedApi(
+        "/api/conversations/invalid-uuid/text-to-speech",
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: "Test",
+            language: "French",
+          }),
+        }
+      );
+      await expectStatus(res, 400);
+    });
   });
 
   describe("Vocabulary - Get", () => {
@@ -543,6 +612,15 @@ describe("API Integration Tests", () => {
         authToken
       );
       await expectStatus(res, 404);
+    });
+
+    // READ: Invalid conversation UUID format
+    test("Get vocabulary with invalid conversation UUID format returns 400", async () => {
+      const res = await authenticatedApi(
+        "/api/conversations/invalid-uuid/vocabulary",
+        authToken
+      );
+      await expectStatus(res, 400);
     });
   });
 
@@ -653,6 +731,18 @@ describe("API Integration Tests", () => {
         }
       );
       await expectStatus(res, 404);
+    });
+
+    // DELETE: Invalid vocabulary UUID format
+    test("Delete vocabulary with invalid UUID format returns 400", async () => {
+      const res = await authenticatedApi(
+        "/api/vocabulary/invalid-uuid",
+        authToken,
+        {
+          method: "DELETE",
+        }
+      );
+      await expectStatus(res, 400);
     });
   });
 
